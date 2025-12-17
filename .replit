@@ -39,9 +39,7 @@ name = "Start application"
 author = "agent"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run dev"
-waitForPort = 5000
+task = "packager.installForAll"
 
 [agent]
 mockupState = "FULLSTACK"
