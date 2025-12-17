@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Equipment } from "@shared/schema";
-import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
+import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin, useUpdateEquipment, useDeleteEquipment } from "@/lib/hooks";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -28,7 +28,10 @@ import {
   ClipboardCheck,
   ScanBarcode,
   Settings,
-  Check
+  Check,
+  Pencil,
+  Trash2,
+  Database
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -1101,6 +1104,252 @@ function AdminBarcodeScannerModal({
   );
 }
 
+function AdminSettingsModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { data: equipment = [] } = useEquipment();
+  const updateEquipment = useUpdateEquipment();
+  const deleteEquipment = useDeleteEquipment();
+  const [editingItem, setEditingItem] = useState<Equipment | null>(null);
+  const [formData, setFormData] = useState({ name: '', category: '', systemColor: '' });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  if (!isOpen) return null;
+
+  const filteredEquipment = equipment.filter(e => 
+    e.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    e.category.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleEdit = (item: Equipment) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      category: item.category,
+      systemColor: item.systemColor || ''
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingItem) return;
+    
+    updateEquipment.mutate({
+      id: editingItem.id,
+      name: formData.name,
+      category: formData.category,
+      systemColor: formData.systemColor || undefined
+    }, {
+      onSuccess: () => {
+        toast.success(`Updated ${editingItem.id}`);
+        setEditingItem(null);
+      },
+      onError: () => {
+        toast.error('Failed to update equipment');
+      }
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    deleteEquipment.mutate(id, {
+      onSuccess: () => {
+        toast.success(`Deleted ${id}`);
+        setDeleteConfirm(null);
+      },
+      onError: () => {
+        toast.error('Failed to delete equipment');
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl max-h-[80vh] bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
+      >
+        <div className="p-6 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <Database className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Equipment Manager</h2>
+                <p className="text-xs text-muted-foreground">Edit or remove equipment</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-admin-settings">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+          
+          <div className="mt-4">
+            <Input 
+              placeholder="Search equipment..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+              data-testid="input-search-equipment"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {filteredEquipment.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              {searchTerm ? 'No equipment found' : 'No equipment in inventory'}
+            </div>
+          ) : (
+            filteredEquipment.map(item => (
+              <div 
+                key={item.id}
+                className="bg-background border border-border rounded-lg p-3"
+              >
+                {editingItem?.id === item.id ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
+                      ID: {item.id}
+                    </div>
+                    <div className="grid gap-2">
+                      <Input 
+                        placeholder="Name"
+                        value={formData.name}
+                        onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                        data-testid={`input-edit-name-${item.id}`}
+                      />
+                      <Input 
+                        placeholder="Category"
+                        value={formData.category}
+                        onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                        data-testid={`input-edit-category-${item.id}`}
+                      />
+                      <Select 
+                        value={formData.systemColor} 
+                        onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
+                      >
+                        <SelectTrigger data-testid={`select-edit-color-${item.id}`}>
+                          <SelectValue placeholder="System Color (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Color</SelectItem>
+                          <SelectItem value="Blue">Blue System</SelectItem>
+                          <SelectItem value="Red">Red System</SelectItem>
+                          <SelectItem value="Green">Green System</SelectItem>
+                          <SelectItem value="Yellow">Yellow System</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => setEditingItem(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={handleSaveEdit}
+                        disabled={!formData.name || !formData.category}
+                        data-testid={`button-save-edit-${item.id}`}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : deleteConfirm === item.id ? (
+                  <div className="space-y-3">
+                    <div className="text-center">
+                      <AlertTriangle className="w-8 h-8 text-destructive mx-auto mb-2" />
+                      <p className="text-sm font-medium">Delete {item.name}?</p>
+                      <p className="text-xs text-muted-foreground">ID: {item.id}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => setDeleteConfirm(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleDelete(item.id)}
+                        data-testid={`button-confirm-delete-${item.id}`}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-muted-foreground">{item.id}</span>
+                        <StatusBadge status={item.status} />
+                        {item.systemColor && (
+                          <span className={cn(
+                            "w-3 h-3 rounded-full",
+                            item.systemColor === 'Blue' && 'bg-blue-500',
+                            item.systemColor === 'Red' && 'bg-red-500',
+                            item.systemColor === 'Green' && 'bg-green-500',
+                            item.systemColor === 'Yellow' && 'bg-yellow-500'
+                          )} />
+                        )}
+                      </div>
+                      <div className="font-medium truncate">{item.name}</div>
+                      <div className="text-xs text-muted-foreground">{item.category}</div>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => handleEdit(item)}
+                        data-testid={`button-edit-${item.id}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteConfirm(item.id)}
+                        data-testid={`button-delete-${item.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        
+        <div className="p-4 border-t border-border bg-muted/30">
+          <p className="text-xs text-muted-foreground text-center">
+            {equipment.length} total items in inventory
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { data: equipment = [], isLoading } = useEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -1108,6 +1357,7 @@ export default function Home() {
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [isAdminSettingsOpen, setIsAdminSettingsOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
@@ -1142,15 +1392,26 @@ export default function Home() {
             
             <div className="flex gap-2">
                 {isAdminMode && (
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="shrink-0 border-amber-500/30 text-amber-500 hover:bg-amber-500/10" 
-                    onClick={() => setIsBarcodeScannerOpen(true)}
-                    data-testid="button-barcode-scanner"
-                  >
-                    <ScanBarcode className="w-5 h-5" />
-                  </Button>
+                  <>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="shrink-0 border-amber-500/30 text-amber-500 hover:bg-amber-500/10" 
+                      onClick={() => setIsBarcodeScannerOpen(true)}
+                      data-testid="button-barcode-scanner"
+                    >
+                      <ScanBarcode className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="shrink-0 border-amber-500/30 text-amber-500 hover:bg-amber-500/10" 
+                      onClick={() => setIsAdminSettingsOpen(true)}
+                      data-testid="button-admin-settings"
+                    >
+                      <Database className="w-5 h-5" />
+                    </Button>
+                  </>
                 )}
                 <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
                    <Plus className="w-5 h-5" />
@@ -1254,6 +1515,12 @@ export default function Home() {
           <AdminBarcodeScannerModal
             isOpen={isBarcodeScannerOpen}
             onClose={() => setIsBarcodeScannerOpen(false)}
+          />
+        )}
+        {isAdminSettingsOpen && (
+          <AdminSettingsModal
+            isOpen={isAdminSettingsOpen}
+            onClose={() => setIsAdminSettingsOpen(false)}
           />
         )}
         {isSystemCheckoutOpen && (
