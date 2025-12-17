@@ -16,7 +16,8 @@ import {
   Wrench, 
   ArrowRightLeft,
   History,
-  X
+  X,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -329,9 +330,99 @@ function ActionModal({
   );
 }
 
+function AddEquipmentModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { addEquipment } = useEquipmentStore();
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    category: ''
+  });
+
+  if (!isOpen) return null;
+
+  const handleSubmit = () => {
+    if (!formData.id || !formData.name || !formData.category) return;
+    
+    addEquipment({
+      id: formData.id,
+      name: formData.name,
+      category: formData.category
+    });
+    
+    setFormData({ id: '', name: '', category: '' });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Add New Equipment</h2>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Equipment ID (QR Code)</Label>
+              <Input 
+                placeholder="e.g. EQ-006" 
+                className="font-mono uppercase"
+                value={formData.id}
+                onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Equipment Name</Label>
+              <Input 
+                placeholder="e.g. Fluke Thermal Imager" 
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input 
+                placeholder="e.g. Measurement" 
+                value={formData.category}
+                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+              />
+            </div>
+
+            <Button 
+              className="w-full h-12 text-lg font-semibold mt-4" 
+              onClick={handleSubmit}
+              disabled={!formData.id || !formData.name || !formData.category}
+            >
+              Add to Inventory
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { equipment, getEquipment } = useEquipmentStore();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
   const selectedEquipment = selectedEquipmentId ? getEquipment(selectedEquipmentId) : null;
@@ -358,6 +449,9 @@ export default function Home() {
             </div>
             
             <div className="flex gap-2">
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)}>
+                   <Plus className="w-5 h-5" />
+                </Button>
                 <Button variant="outline" size="icon" className="shrink-0 rounded-full">
                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                 </Button>
@@ -424,6 +518,12 @@ export default function Home() {
       )}
 
       <AnimatePresence>
+        {isAddModalOpen && (
+          <AddEquipmentModal 
+            isOpen={isAddModalOpen} 
+            onClose={() => setIsAddModalOpen(false)} 
+          />
+        )}
         {selectedEquipmentId && (
             <ActionModal 
                 equipment={selectedEquipment || null} 

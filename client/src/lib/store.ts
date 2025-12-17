@@ -25,6 +25,7 @@ interface EquipmentStore {
   equipment: Equipment[];
   checkOut: (id: string, workOrder: string, techName: string) => void;
   checkIn: (id: string, notes: string, isBroken: boolean) => void;
+  addEquipment: (equipment: Omit<Equipment, 'history' | 'status'>) => void;
   getEquipment: (id: string) => Equipment | undefined;
   reset: () => void;
 }
@@ -140,6 +141,20 @@ export const useEquipmentStore = create<EquipmentStore>()(
               ]
             };
           })
+        }));
+      },
+
+      addEquipment: (newEquipment) => {
+        set((state) => ({
+          equipment: [
+            ...state.equipment,
+            {
+              ...newEquipment,
+              status: 'available',
+              history: [],
+              notes: ''
+            }
+          ]
         }));
       },
 
