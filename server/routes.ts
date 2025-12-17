@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertEquipmentSchema } from "@shared/schema";
+import { insertEquipmentSchema, insertSystemSchema } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -246,6 +246,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching history:", error);
       res.status(500).json({ error: "Failed to fetch history" });
+    }
+  });
+
+  // ==================== SYSTEMS ROUTES ====================
+
+  // Get all systems
+  app.get("/api/systems", async (req, res) => {
+    try {
+      const systems = await storage.getAllSystems();
+      res.json(systems);
+    } catch (error) {
+      console.error("Error fetching systems:", error);
+      res.status(500).json({ error: "Failed to fetch systems" });
+    }
+  });
+
+  // Create system
+  app.post("/api/systems", async (req, res) => {
+    try {
+      const validatedData = insertSystemSchema.parse(req.body);
+      const system = await storage.createSystem(validatedData);
+      res.status(201).json(system);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error creating system:", error);
+      res.status(500).json({ error: "Failed to create system" });
+    }
+  });
+
+  // Update system
+  app.patch("/api/systems/:id", async (req, res) => {
+    try {
+      const system = await storage.updateSystem(req.params.id, req.body);
+      if (!system) {
+        return res.status(404).json({ error: "System not found" });
+      }
+      res.json(system);
+    } catch (error) {
+      console.error("Error updating system:", error);
+      res.status(500).json({ error: "Failed to update system" });
+    }
+  });
+
+  // Delete system
+  app.delete("/api/systems/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteSystem(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "System not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting system:", error);
+      res.status(500).json({ error: "Failed to delete system" });
     }
   });
 
