@@ -12,23 +12,26 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
   const containerRef = useRef<HTMLDivElement>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [isScanning, setIsScanning] = useState(false);
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
       try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
+        const scanner = scannerRef.current;
+        if (scanner.isScanning) {
+          await scanner.stop();
         }
-        await scannerRef.current.clear();
+        scanner.clear();
       } catch (err) {
         console.error('Error stopping scanner:', err);
       }
       scannerRef.current = null;
+      setIsScanning(false);
     }
   }, []);
 
   useEffect(() => {
-    if (!isActive || !containerRef.current) {
+    if (!isActive) {
       stopScanner();
       return;
     }
@@ -41,16 +44,26 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
     const startScanner = async () => {
       await stopScanner();
       
+      const container = document.getElementById(containerId);
+      if (!container) {
+        console.error('Scanner container not found');
+        return;
+      }
+
       try {
         const scanner = new Html5Qrcode(containerId, {
           formatsToSupport: [
             Html5QrcodeSupportedFormats.QR_CODE,
             Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.CODE_93,
             Html5QrcodeSupportedFormats.EAN_13,
             Html5QrcodeSupportedFormats.EAN_8,
             Html5QrcodeSupportedFormats.UPC_A,
             Html5QrcodeSupportedFormats.UPC_E,
+            Html5QrcodeSupportedFormats.ITF,
+            Html5QrcodeSupportedFormats.CODABAR,
+            Html5QrcodeSupportedFormats.DATA_MATRIX,
           ],
           verbose: false,
         });
@@ -60,30 +73,42 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
         await scanner.start(
           { facingMode: 'environment' },
           {
-            fps: 10,
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.5,
+            fps: 15,
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+              const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+              const qrboxSize = Math.floor(minEdge * 0.8);
+              return {
+                width: Math.min(qrboxSize, 400),
+                height: Math.min(Math.floor(qrboxSize * 0.6), 200)
+              };
+            },
+            aspectRatio: 1.777,
+            disableFlip: false,
           },
           (decodedText) => {
+            console.log('Barcode detected:', decodedText);
             onScan(decodedText);
           },
           () => {}
         );
         
         setHasPermission(true);
+        setIsScanning(true);
         setErrorMessage('');
       } catch (err: unknown) {
         console.error('Scanner error:', err);
         setHasPermission(false);
+        setIsScanning(false);
         const message = err instanceof Error ? err.message : 'Camera access denied';
         setErrorMessage(message);
         onError?.(message);
       }
     };
 
-    startScanner();
+    const timer = setTimeout(startScanner, 100);
 
     return () => {
+      clearTimeout(timer);
       stopScanner();
     };
   }, [isActive, onScan, onError, stopScanner]);
@@ -93,6 +118,14 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
       <div id="barcode-scanner-container" ref={containerRef} className="w-full h-full" />
+      
+      {hasPermission === true && isScanning && (
+        <div className="absolute bottom-2 left-0 right-0 text-center">
+          <span className="text-xs text-green-400 bg-black/50 px-2 py-1 rounded">
+            Camera active - point at barcode
+          </span>
+        </div>
+      )}
       
       {hasPermission === false && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 text-center p-4">
