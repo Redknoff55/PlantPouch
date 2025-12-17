@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { Equipment } from "@shared/schema";
 import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
 import { toast } from "sonner";
+import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,12 +116,17 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
 
 function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClose: () => void }) {
   const [manualId, setManualId] = useState("");
-  const { data: equipment = [] } = useEquipment();
+  const [isScanning, setIsScanning] = useState(true);
 
-  const handleSimulatedScan = () => {
-    // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : '');
-    if (targetId) onScan(targetId);
+  const handleScan = useCallback((code: string) => {
+    setIsScanning(false);
+    onScan(code);
+  }, [onScan]);
+
+  const handleManualSubmit = () => {
+    if (manualId.trim()) {
+      onScan(manualId.trim());
+    }
   };
 
   return (
@@ -131,20 +137,14 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
             <QrCode className="w-6 h-6 text-primary" />
           </div>
           <CardTitle>Scan Equipment QR</CardTitle>
-          <CardDescription>Align the QR code within the frame</CardDescription>
+          <CardDescription>Align the QR code or barcode within the frame</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center" onClick={handleSimulatedScan}>
-            <div className="absolute inset-0 border-[40px] border-black/50 z-10"></div>
-            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative">
-               <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
-               <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
-               <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
-               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
-            </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
-                <span className="text-muted-foreground text-xs animate-bounce">Tap to simulate scan</span>
-            </div>
+          <div className="relative rounded-lg overflow-hidden border-2 border-primary/30">
+            <BarcodeScanner 
+              onScan={handleScan}
+              isActive={isScanning}
+            />
           </div>
           
           <div className="space-y-4">
@@ -163,12 +163,13 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 className="font-mono uppercase"
+                data-testid="input-manual-equipment-id"
               />
-              <Button onClick={handleSimulatedScan}>
+              <Button onClick={handleManualSubmit} data-testid="button-manual-identify">
                 Identify
               </Button>
             </div>
-            <Button variant="ghost" className="w-full" onClick={onClose}>
+            <Button variant="ghost" className="w-full" onClick={onClose} data-testid="button-cancel-scan">
               Cancel
             </Button>
           </div>
@@ -990,16 +991,11 @@ function AdminBarcodeScannerModal({
 
           {step === 'scan' && (
             <div className="space-y-4">
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden border-2 border-amber-500/30 flex items-center justify-center cursor-pointer" onClick={handleSimulatedScan}>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full h-1 bg-amber-500/50 animate-pulse" />
-                </div>
-                <div className="absolute inset-x-8 top-8 bottom-8 border-2 border-dashed border-amber-500/40 rounded flex items-center justify-center">
-                  <ScanBarcode className="w-16 h-16 text-amber-500/30" />
-                </div>
-                <div className="absolute bottom-4 text-center">
-                  <span className="text-amber-500/70 text-xs animate-pulse">Tap to simulate barcode scan</span>
-                </div>
+              <div className="relative rounded-lg overflow-hidden border-2 border-amber-500/30">
+                <BarcodeScanner 
+                  onScan={handleScan}
+                  isActive={step === 'scan'}
+                />
               </div>
               
               <div className="space-y-2">
@@ -1020,8 +1016,8 @@ function AdminBarcodeScannerModal({
                     className="font-mono uppercase"
                     data-testid="input-manual-barcode"
                   />
-                  <Button onClick={handleSimulatedScan} data-testid="button-scan-barcode">
-                    Scan
+                  <Button onClick={() => manualBarcode && handleScan(manualBarcode)} data-testid="button-scan-barcode">
+                    Add
                   </Button>
                 </div>
               </div>

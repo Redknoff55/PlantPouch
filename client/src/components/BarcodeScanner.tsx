@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 interface BarcodeScannerProps {
@@ -13,12 +13,34 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+        await scannerRef.current.clear();
+      } catch (err) {
+        console.error('Error stopping scanner:', err);
+      }
+      scannerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
-    if (!isActive || !containerRef.current) return;
+    if (!isActive || !containerRef.current) {
+      stopScanner();
+      return;
+    }
 
     const containerId = 'barcode-scanner-container';
     
+    setHasPermission(null);
+    setErrorMessage('');
+
     const startScanner = async () => {
+      await stopScanner();
+      
       try {
         const scanner = new Html5Qrcode(containerId, {
           formatsToSupport: [
@@ -62,11 +84,9 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
     startScanner();
 
     return () => {
-      if (scannerRef.current?.isScanning) {
-        scannerRef.current.stop().catch(console.error);
-      }
+      stopScanner();
     };
-  }, [isActive, onScan, onError]);
+  }, [isActive, onScan, onError, stopScanner]);
 
   if (!isActive) return null;
 
