@@ -2,12 +2,12 @@ version: '3.8'
 
 services:
   app:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME:latest
+    image: ghcr.io/redknoff55/plantpouch:latest
     ports:
       - "${APP_PORT:-5000}:5000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-equipmanager}:${POSTGRES_PASSWORD:-equipmanager}@db:5432/${POSTGRES_DB:-equipmanager}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-plantpouch}:${POSTGRES_PASSWORD:-plantpouch}@db:5432/${POSTGRES_DB:-plantpouch}
     depends_on:
       db:
         condition: service_healthy
@@ -16,15 +16,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-equipmanager}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-equipmanager}
-      POSTGRES_DB: ${POSTGRES_DB:-equipmanager}
+      POSTGRES_USER: ${POSTGRES_USER:-plantpouch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plantpouch}
+      POSTGRES_DB: ${POSTGRES_DB:-plantpouch}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "${DB_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-equipmanager} -d ${POSTGRES_DB:-equipmanager}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plantpouch} -d ${POSTGRES_DB:-plantpouch}"]
       interval: 5s
       timeout: 5s
       retries: 5

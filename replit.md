@@ -1,8 +1,8 @@
-# Industrial Equipment Manager
+# PlantPouch - Equipment Manager
 
 ## Overview
 
-Industrial Equipment Manager is a full-stack web application for tracking, maintaining, and managing industrial testing equipment using QR scanning workflows. The system enables technicians to check out equipment by work order, track equipment status (available, checked out, broken), and maintain equipment history records. Equipment can be organized by system color groups for batch checkout operations.
+PlantPouch is a full-stack web application for tracking, maintaining, and managing industrial testing equipment using QR and barcode scanning workflows. The system enables technicians to check out equipment by work order, track equipment status (available, checked out, broken), and maintain equipment history records. Equipment can be organized by system color groups for batch checkout operations. Includes admin barcode scanner for rapid equipment import.
 
 ## User Preferences
 

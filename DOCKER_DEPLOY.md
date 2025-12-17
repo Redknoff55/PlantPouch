@@ -1,4 +1,4 @@
-# Docker Deployment Guide
+# PlantPouch - Docker Deployment Guide
 
 This guide covers two deployment options: GitHub Container Registry (automatic) and Docker Hub (manual).
 
@@ -18,11 +18,7 @@ The included GitHub Actions workflow automatically builds and pushes images when
 
 1. Copy `docker-compose.deploy.yml` to your server
 2. Create a `.env` file (see Environment Variables below)
-3. Update the image name in `docker-compose.deploy.yml`:
-   ```yaml
-   image: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME:latest
-   ```
-4. Run:
+3. Run:
    ```bash
    docker compose -f docker-compose.deploy.yml up -d
    ```
@@ -39,7 +35,7 @@ docker compose -f docker-compose.deploy.yml exec app npx drizzle-kit push
 ### One-time Setup
 
 1. Create a Docker Hub account at https://hub.docker.com
-2. Create a repository called `equipmanager`
+2. Create a repository called `plantpouch`
 
 ### Build and Push
 
@@ -48,10 +44,10 @@ docker compose -f docker-compose.deploy.yml exec app npx drizzle-kit push
 docker login
 
 # Build the image
-docker build -t YOUR_DOCKERHUB_USERNAME/equipmanager:latest .
+docker build -t YOUR_DOCKERHUB_USERNAME/plantpouch:latest .
 
 # Push to Docker Hub
-docker push YOUR_DOCKERHUB_USERNAME/equipmanager:latest
+docker push YOUR_DOCKERHUB_USERNAME/plantpouch:latest
 ```
 
 ### Deployment
@@ -60,7 +56,7 @@ docker push YOUR_DOCKERHUB_USERNAME/equipmanager:latest
 2. Create a `.env` file (see Environment Variables below)
 3. Update the image name:
    ```yaml
-   image: YOUR_DOCKERHUB_USERNAME/equipmanager:latest
+   image: YOUR_DOCKERHUB_USERNAME/plantpouch:latest
    ```
 4. Run:
    ```bash
@@ -83,9 +79,9 @@ Create a `.env` file next to your `docker-compose.deploy.yml`:
 APP_PORT=5000
 
 # Database credentials (change these in production!)
-POSTGRES_USER=equipmanager
+POSTGRES_USER=plantpouch
 POSTGRES_PASSWORD=your_secure_password_here
-POSTGRES_DB=equipmanager
+POSTGRES_DB=plantpouch
 
 # Optional: Expose database port (remove in production)
 # DB_PORT=5432
@@ -110,10 +106,10 @@ docker compose -f docker-compose.deploy.yml pull
 docker compose -f docker-compose.deploy.yml up -d
 
 # Backup database
-docker compose -f docker-compose.deploy.yml exec db pg_dump -U equipmanager equipmanager > backup.sql
+docker compose -f docker-compose.deploy.yml exec db pg_dump -U plantpouch plantpouch > backup.sql
 
 # Restore database
-docker compose -f docker-compose.deploy.yml exec -T db psql -U equipmanager equipmanager < backup.sql
+docker compose -f docker-compose.deploy.yml exec -T db psql -U plantpouch plantpouch < backup.sql
 ```
 
 ---
@@ -127,5 +123,5 @@ When using GitHub Actions, images are tagged automatically:
 
 To deploy a specific version:
 ```yaml
-image: ghcr.io/YOUR_USERNAME/YOUR_REPO:v1.0.0
+image: ghcr.io/redknoff55/plantpouch:v1.0.0
 ```

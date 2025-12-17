@@ -1136,11 +1136,11 @@ export default function Home() {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-primary rounded flex items-center justify-center font-bold text-primary-foreground text-xl shadow-lg shadow-primary/20">
-                    EM
+                    PP
                 </div>
                 <div>
-                    <h1 className="font-bold leading-none tracking-tight">EquipManager</h1>
-                    <span className="text-xs text-muted-foreground font-mono">IND-V1.0</span>
+                    <h1 className="font-bold leading-none tracking-tight">PlantPouch</h1>
+                    <span className="text-xs text-muted-foreground font-mono">v1.0</span>
                 </div>
             </div>
             
