@@ -247,7 +247,7 @@ export const useEquipmentStore = create<EquipmentStore>()(
       reset: () => set({ equipment: INITIAL_DATA })
     }),
     {
-      name: 'equipment-storage',
+      name: 'equipment-storage-v2',
     }
   )
 );
