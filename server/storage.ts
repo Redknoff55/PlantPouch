@@ -3,8 +3,11 @@ import {
   type InsertEquipment,
   type EquipmentHistory,
   type InsertEquipmentHistory,
+  type System,
+  type InsertSystem,
   equipment as equipmentTable,
-  equipmentHistory as equipmentHistoryTable
+  equipmentHistory as equipmentHistoryTable,
+  systems as systemsTable
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and } from "drizzle-orm";
@@ -24,6 +27,12 @@ export interface IStorage {
   // Equipment History
   addEquipmentHistory(history: InsertEquipmentHistory): Promise<EquipmentHistory>;
   getEquipmentHistory(equipmentId: string): Promise<EquipmentHistory[]>;
+  
+  // Systems CRUD
+  getAllSystems(): Promise<System[]>;
+  createSystem(system: InsertSystem): Promise<System>;
+  updateSystem(id: string, updates: Partial<InsertSystem>): Promise<System | undefined>;
+  deleteSystem(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -83,6 +92,29 @@ export class DatabaseStorage implements IStorage {
       .from(equipmentHistoryTable)
       .where(eq(equipmentHistoryTable.equipmentId, equipmentId))
       .orderBy(equipmentHistoryTable.timestamp);
+  }
+
+  async getAllSystems(): Promise<System[]> {
+    return await db.select().from(systemsTable);
+  }
+
+  async createSystem(system: InsertSystem): Promise<System> {
+    const result = await db.insert(systemsTable).values(system).returning();
+    return result[0];
+  }
+
+  async updateSystem(id: string, updates: Partial<InsertSystem>): Promise<System | undefined> {
+    const result = await db
+      .update(systemsTable)
+      .set(updates)
+      .where(eq(systemsTable.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteSystem(id: string): Promise<boolean> {
+    const result = await db.delete(systemsTable).where(eq(systemsTable.id, id)).returning();
+    return result.length > 0;
   }
 }
 
