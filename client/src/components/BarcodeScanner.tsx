@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 
 interface BarcodeScannerProps {
@@ -9,30 +9,37 @@ interface BarcodeScannerProps {
 
 export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const onScanRef = useRef(onScan);
+  const onErrorRef = useRef(onError);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isScanning, setIsScanning] = useState(false);
+  const mountedRef = useRef(true);
 
-  const stopScanner = useCallback(async () => {
-    if (scannerRef.current) {
-      try {
-        const scanner = scannerRef.current;
-        if (scanner.isScanning) {
-          await scanner.stop();
-        }
-        scanner.clear();
-      } catch (err) {
-        console.error('Error stopping scanner:', err);
-      }
-      scannerRef.current = null;
-      setIsScanning(false);
-    }
+  onScanRef.current = onScan;
+  onErrorRef.current = onError;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
     if (!isActive) {
-      stopScanner();
+      if (scannerRef.current) {
+        const scanner = scannerRef.current;
+        if (scanner.isScanning) {
+          scanner.stop().then(() => {
+            scanner.clear();
+          }).catch(console.error);
+        } else {
+          try { scanner.clear(); } catch {}
+        }
+        scannerRef.current = null;
+      }
+      setIsScanning(false);
       return;
     }
 
@@ -42,11 +49,18 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
     setErrorMessage('');
 
     const startScanner = async () => {
-      await stopScanner();
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.isScanning) {
+            await scannerRef.current.stop();
+          }
+          scannerRef.current.clear();
+        } catch {}
+        scannerRef.current = null;
+      }
       
       const container = document.getElementById(containerId);
-      if (!container) {
-        console.error('Scanner container not found');
+      if (!container || !mountedRef.current) {
         return;
       }
 
@@ -87,37 +101,55 @@ export function BarcodeScanner({ onScan, onError, isActive }: BarcodeScannerProp
           },
           (decodedText) => {
             console.log('Barcode detected:', decodedText);
-            onScan(decodedText);
+            if (mountedRef.current && onScanRef.current) {
+              onScanRef.current(decodedText);
+            }
           },
           () => {}
         );
         
-        setHasPermission(true);
-        setIsScanning(true);
-        setErrorMessage('');
+        if (mountedRef.current) {
+          setHasPermission(true);
+          setIsScanning(true);
+          setErrorMessage('');
+        }
       } catch (err: unknown) {
         console.error('Scanner error:', err);
-        setHasPermission(false);
-        setIsScanning(false);
-        const message = err instanceof Error ? err.message : 'Camera access denied';
-        setErrorMessage(message);
-        onError?.(message);
+        if (mountedRef.current) {
+          setHasPermission(false);
+          setIsScanning(false);
+          const message = err instanceof Error ? err.message : 'Camera access denied';
+          setErrorMessage(message);
+          if (onErrorRef.current) {
+            onErrorRef.current(message);
+          }
+        }
       }
     };
 
-    const timer = setTimeout(startScanner, 100);
+    const timer = setTimeout(startScanner, 150);
 
     return () => {
       clearTimeout(timer);
-      stopScanner();
+      if (scannerRef.current) {
+        const scanner = scannerRef.current;
+        if (scanner.isScanning) {
+          scanner.stop().then(() => {
+            try { scanner.clear(); } catch {}
+          }).catch(console.error);
+        } else {
+          try { scanner.clear(); } catch {}
+        }
+        scannerRef.current = null;
+      }
     };
-  }, [isActive, onScan, onError, stopScanner]);
+  }, [isActive]);
 
   if (!isActive) return null;
 
   return (
     <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden">
-      <div id="barcode-scanner-container" ref={containerRef} className="w-full h-full" />
+      <div id="barcode-scanner-container" className="w-full h-full" />
       
       {hasPermission === true && isScanning && (
         <div className="absolute bottom-2 left-0 right-0 text-center">
