@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import type { InsertEquipment } from "@shared/schema";
+import type { InsertEquipment, InsertSystem } from "@shared/schema";
 
 export function useEquipment() {
   return useQuery({
@@ -86,6 +86,45 @@ export function useDeleteEquipment() {
     mutationFn: (id: string) => api.equipment.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+// Systems hooks
+export function useSystems() {
+  return useQuery({
+    queryKey: ['systems'],
+    queryFn: api.systems.getAll,
+  });
+}
+
+export function useCreateSystem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InsertSystem) => api.systems.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['systems'] });
+    },
+  });
+}
+
+export function useUpdateSystem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Partial<InsertSystem>) =>
+      api.systems.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['systems'] });
+    },
+  });
+}
+
+export function useDeleteSystem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.systems.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['systems'] });
     },
   });
 }

@@ -1,4 +1,4 @@
-import type { Equipment, InsertEquipment } from "@shared/schema";
+import type { Equipment, InsertEquipment, System, InsertSystem } from "@shared/schema";
 
 const API_BASE = "/api";
 
@@ -89,6 +89,41 @@ export const api = {
       });
       if (!res.ok) throw new Error('Failed to checkin equipment');
       return res.json();
+    },
+  },
+
+  systems: {
+    getAll: async (): Promise<System[]> => {
+      const res = await fetch(`${API_BASE}/systems`);
+      if (!res.ok) throw new Error('Failed to fetch systems');
+      return res.json();
+    },
+
+    create: async (data: InsertSystem): Promise<System> => {
+      const res = await fetch(`${API_BASE}/systems`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to create system');
+      return res.json();
+    },
+
+    update: async (id: string, data: Partial<InsertSystem>): Promise<System> => {
+      const res = await fetch(`${API_BASE}/systems/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to update system');
+      return res.json();
+    },
+
+    delete: async (id: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/systems/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to delete system');
     },
   },
 };
