@@ -17,11 +17,17 @@ import {
   ArrowRightLeft,
   History,
   X,
-  Plus
+  Plus,
+  ArrowRight,
+  AlertCircle,
+  RefreshCw,
+  Box
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // --- Components ---
 
@@ -47,6 +53,12 @@ function StatusBadge({ status }: { status: Equipment['status'] }) {
 
 function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => void }) {
   const isBroken = item.status === 'broken';
+  const systemColors: Record<string, string> = {
+    'Blue': 'border-l-4 border-l-blue-500',
+    'Red': 'border-l-4 border-l-red-500',
+    'Green': 'border-l-4 border-l-green-500',
+    'Yellow': 'border-l-4 border-l-yellow-500',
+  };
 
   return (
     <motion.div
@@ -56,7 +68,8 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
         "group relative overflow-hidden rounded-lg border p-4 transition-all cursor-pointer shadow-sm",
         isBroken 
           ? "border-destructive/50 hover:border-destructive bg-destructive/5 shadow-destructive/5" 
-          : "border-border hover:border-primary/50 bg-card hover:bg-muted/30"
+          : "border-border hover:border-primary/50 bg-card hover:bg-muted/30",
+         item.systemColor && systemColors[item.systemColor]
       )}
     >
       {isBroken && (
@@ -70,6 +83,11 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
           <div className="flex items-center gap-2 mb-1">
             <span className="font-mono text-xs text-muted-foreground">{item.id}</span>
             <StatusBadge status={item.status} />
+            {item.systemColor && (
+                 <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
+                    {item.systemColor} Sys
+                 </Badge>
+            )}
           </div>
           <h3 className={cn("font-semibold text-lg transition-colors", isBroken ? "text-destructive" : "text-foreground group-hover:text-primary")}>
             {item.name}
@@ -330,6 +348,225 @@ function ActionModal({
   );
 }
 
+function SystemCheckoutModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { equipment, checkOutSystem } = useEquipmentStore();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [workOrder, setWorkOrder] = useState("");
+  
+  // Track which items are selected/verified for checkout
+  // Key: Original Item ID, Value: The ID of the item to actually checkout (could be the same, or a replacement)
+  const [verifiedItems, setVerifiedItems] = useState<Record<string, string>>({});
+  const [issues, setIssues] = useState<Record<string, string>>({});
+
+  // Get unique system colors
+  const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
+  
+  // Get items for the selected system
+  const systemItems = equipment.filter(e => e.systemColor === selectedColor);
+
+  const handleColorSelect = (color: string) => {
+    setSelectedColor(color);
+    // Initialize verified items with the default system items
+    const initialVerified: Record<string, string> = {};
+    equipment.filter(e => e.systemColor === color).forEach(e => {
+      initialVerified[e.id] = e.id;
+    });
+    setVerifiedItems(initialVerified);
+    setStep(2);
+  };
+
+  const handleSwap = (originalId: string, newItemId: string) => {
+    setVerifiedItems(prev => ({
+      ...prev,
+      [originalId]: newItemId
+    }));
+  };
+
+  const handleSubmit = () => {
+    if (!workOrder) return;
+    
+    // Collect all final IDs to checkout
+    const finalIds = Object.values(verifiedItems);
+    
+    checkOutSystem(selectedColor, finalIds, workOrder, "Tech #01");
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Box className="w-5 h-5 text-primary" />
+              System Checkout
+            </h2>
+            <p className="text-sm text-muted-foreground">Check out a complete equipment system</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {step === 1 ? (
+            <div className="space-y-4">
+              <Label>Select System Color</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {['Blue', 'Red', 'Yellow', 'Green'].map(color => {
+                    // Check if we have items for this color
+                    const hasItems = systemColors.includes(color);
+                    return (
+                        <Button
+                            key={color}
+                            variant="outline"
+                            className={cn(
+                                "h-20 text-lg font-semibold border-2 relative overflow-hidden",
+                                hasItems ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
+                            )}
+                            onClick={() => hasItems && handleColorSelect(color)}
+                            disabled={!hasItems}
+                        >
+                            <div className={cn("absolute inset-y-0 left-0 w-2", {
+                                'bg-blue-500': color === 'Blue',
+                                'bg-red-500': color === 'Red',
+                                'bg-yellow-500': color === 'Yellow',
+                                'bg-green-500': color === 'Green',
+                            })} />
+                            {color} System
+                        </Button>
+                    );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                  <div>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">System</span>
+                    <div className="font-bold text-lg text-primary">{selectedColor}</div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setStep(1)}>Change</Button>
+               </div>
+
+               <div className="space-y-4">
+                 <Label>System Verification Checklist</Label>
+                 <div className="space-y-3">
+                    {systemItems.map(item => {
+                        const currentSelectedId = verifiedItems[item.id];
+                        const isOriginal = currentSelectedId === item.id;
+                        const selectedItem = equipment.find(e => e.id === currentSelectedId);
+                        
+                        // Find potential replacements (same category, available, not already in this system)
+                        const replacements = equipment.filter(e => 
+                            e.category === item.category && 
+                            e.status === 'available' && 
+                            e.id !== item.id
+                        );
+
+                        return (
+                            <div key={item.id} className="p-4 rounded-lg border border-border bg-card space-y-3">
+                                <div className="flex items-start gap-3">
+                                    <Checkbox 
+                                        checked={true} // Always checked as we are verifying the slot
+                                        className="mt-1"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="flex justify-between">
+                                            <span className="font-medium">{item.category}</span>
+                                            <Badge variant={isOriginal ? "outline" : "secondary"} className="font-mono text-[10px]">
+                                                {isOriginal ? 'ORIGINAL' : 'REPLACEMENT'}
+                                            </Badge>
+                                        </div>
+                                        
+                                        {isOriginal ? (
+                                            <div className="text-sm text-muted-foreground">{item.name} <span className="font-mono text-xs opacity-70">({item.id})</span></div>
+                                        ) : (
+                                            <div className="text-sm text-primary font-medium flex items-center gap-1">
+                                                <RefreshCw className="w-3 h-3" />
+                                                Swapped: {selectedItem?.name} ({selectedItem?.id})
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Actions Row */}
+                                <div className="pl-7 flex flex-wrap gap-2 items-center">
+                                    {/* Swap Dropdown */}
+                                    <Select 
+                                        value={currentSelectedId} 
+                                        onValueChange={(val) => handleSwap(item.id, val)}
+                                    >
+                                        <SelectTrigger className="h-8 w-[200px] text-xs">
+                                            <SelectValue placeholder="Select equipment" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value={item.id}>
+                                                Original: {item.name} ({item.id})
+                                            </SelectItem>
+                                            {replacements.map(rep => (
+                                                <SelectItem key={rep.id} value={rep.id}>
+                                                    Available: {rep.name} ({rep.id})
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Issue Reporting */}
+                                    <Input 
+                                        className="h-8 flex-1 text-xs" 
+                                        placeholder="Report issue with original..."
+                                        value={issues[item.id] || ''}
+                                        onChange={(e) => setIssues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                 </div>
+               </div>
+
+               <div className="pt-4 border-t border-border space-y-4">
+                  <div className="space-y-2">
+                    <Label>Work Order #</Label>
+                    <Input 
+                        placeholder="Enter WO-XXXX" 
+                        className="font-mono text-lg"
+                        value={workOrder}
+                        onChange={(e) => setWorkOrder(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    className="w-full h-12 text-lg font-bold" 
+                    onClick={handleSubmit}
+                    disabled={!workOrder}
+                  >
+                    Check Out System
+                  </Button>
+               </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function AddEquipmentModal({ 
   isOpen, 
   onClose 
@@ -341,7 +578,8 @@ function AddEquipmentModal({
   const [formData, setFormData] = useState({
     id: '',
     name: '',
-    category: ''
+    category: '',
+    systemColor: ''
   });
 
   if (!isOpen) return null;
@@ -352,10 +590,11 @@ function AddEquipmentModal({
     addEquipment({
       id: formData.id,
       name: formData.name,
-      category: formData.category
+      category: formData.category,
+      systemColor: formData.systemColor || undefined
     });
     
-    setFormData({ id: '', name: '', category: '' });
+    setFormData({ id: '', name: '', category: '', systemColor: '' });
     onClose();
   };
 
@@ -405,6 +644,24 @@ function AddEquipmentModal({
               />
             </div>
 
+             <div className="space-y-2">
+              <Label>System Color (Optional)</Label>
+              <Select 
+                value={formData.systemColor} 
+                onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
+              >
+                  <SelectTrigger>
+                      <SelectValue placeholder="Select a system color..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="Blue">Blue System</SelectItem>
+                      <SelectItem value="Red">Red System</SelectItem>
+                      <SelectItem value="Green">Green System</SelectItem>
+                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                  </SelectContent>
+              </Select>
+            </div>
+
             <Button 
               className="w-full h-12 text-lg font-semibold mt-4" 
               onClick={handleSubmit}
@@ -423,6 +680,7 @@ export default function Home() {
   const { equipment, getEquipment } = useEquipmentStore();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
   const selectedEquipment = selectedEquipmentId ? getEquipment(selectedEquipmentId) : null;
@@ -477,13 +735,22 @@ export default function Home() {
         </div>
 
         {/* Action Button */}
-        <button 
-            onClick={() => setIsScannerOpen(true)}
-            className="w-full py-6 rounded-xl bg-primary text-primary-foreground font-bold text-xl shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
-        >
-            <QrCode className="w-6 h-6" />
-            SCAN EQUIPMENT
-        </button>
+        <div className="grid grid-cols-2 gap-4">
+          <button 
+              onClick={() => setIsSystemCheckoutOpen(true)}
+              className="py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+          >
+              <Box className="w-8 h-8" />
+              SYSTEM CHECKOUT
+          </button>
+          <button 
+              onClick={() => setIsScannerOpen(true)}
+              className="py-6 rounded-xl bg-card border border-primary/20 text-foreground font-bold text-lg shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+          >
+              <QrCode className="w-8 h-8 text-primary" />
+              SINGLE SCAN
+          </button>
+        </div>
 
         {/* Equipment List */}
         <div className="space-y-4">
@@ -522,6 +789,12 @@ export default function Home() {
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)} 
+          />
+        )}
+        {isSystemCheckoutOpen && (
+          <SystemCheckoutModal
+            isOpen={isSystemCheckoutOpen}
+            onClose={() => setIsSystemCheckoutOpen(false)}
           />
         )}
         {selectedEquipmentId && (
