@@ -901,7 +901,9 @@ function AdminBarcodeScannerModal({
   isOpen: boolean; 
   onClose: () => void 
 }) {
+  const { data: allEquipment = [] } = useEquipment();
   const createEquipment = useCreateEquipment();
+  const updateEquipment = useUpdateEquipment();
   const [scannedId, setScannedId] = useState("");
   const [manualBarcode, setManualBarcode] = useState("");
   const [formData, setFormData] = useState({
@@ -911,43 +913,84 @@ function AdminBarcodeScannerModal({
   });
   const [addedItems, setAddedItems] = useState<string[]>([]);
   const [step, setStep] = useState<'scan' | 'details'>('scan');
+  const [isExisting, setIsExisting] = useState(false);
+  const [existingEquipment, setExistingEquipment] = useState<Equipment | null>(null);
 
   if (!isOpen) return null;
 
-  const handleScan = (barcode: string) => {
+  const handleScan = useCallback((barcode: string) => {
+    const existing = allEquipment.find(e => e.id === barcode);
+    
     setScannedId(barcode);
+    
+    if (existing) {
+      setIsExisting(true);
+      setExistingEquipment(existing);
+      setFormData({
+        name: existing.name,
+        category: existing.category,
+        systemColor: existing.systemColor || ''
+      });
+    } else {
+      setIsExisting(false);
+      setExistingEquipment(null);
+      setFormData({ name: '', category: '', systemColor: '' });
+    }
+    
     setStep('details');
-  };
+  }, [allEquipment]);
 
-  const handleSimulatedScan = () => {
-    const barcode = manualBarcode || `EQ-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    handleScan(barcode);
-  };
-
-  const handleAddEquipment = () => {
+  const handleSaveEquipment = () => {
     if (!scannedId || !formData.name || !formData.category) return;
     
-    createEquipment.mutate({
-      id: scannedId,
-      name: formData.name,
-      category: formData.category,
-      systemColor: formData.systemColor || undefined,
-      status: 'available'
-    });
-    
-    setAddedItems(prev => [...prev, scannedId]);
+    if (isExisting) {
+      updateEquipment.mutate({
+        id: scannedId,
+        name: formData.name,
+        category: formData.category,
+        systemColor: formData.systemColor || undefined,
+      }, {
+        onSuccess: () => {
+          toast.success(`Updated ${scannedId}`);
+          setAddedItems(prev => [...prev, scannedId]);
+          resetToScan();
+        },
+        onError: () => {
+          toast.error('Failed to update equipment');
+        }
+      });
+    } else {
+      createEquipment.mutate({
+        id: scannedId,
+        name: formData.name,
+        category: formData.category,
+        systemColor: formData.systemColor || undefined,
+        status: 'available'
+      }, {
+        onSuccess: () => {
+          toast.success(`Added ${scannedId}`);
+          setAddedItems(prev => [...prev, scannedId]);
+          resetToScan();
+        },
+        onError: () => {
+          toast.error('Failed to add equipment');
+        }
+      });
+    }
+  };
+
+  const resetToScan = () => {
     setScannedId("");
     setFormData({ name: '', category: '', systemColor: '' });
     setManualBarcode("");
+    setIsExisting(false);
+    setExistingEquipment(null);
     setStep('scan');
   };
 
   const handleClose = () => {
-    setScannedId("");
-    setFormData({ name: '', category: '', systemColor: '' });
-    setManualBarcode("");
+    resetToScan();
     setAddedItems([]);
-    setStep('scan');
     onClose();
   };
 
@@ -1029,9 +1072,25 @@ function AdminBarcodeScannerModal({
 
           {step === 'details' && (
             <div className="space-y-4">
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-center">
-                <span className="text-xs text-muted-foreground uppercase tracking-wider">Scanned Barcode</span>
-                <div className="text-2xl font-mono font-bold text-amber-500 mt-1">{scannedId}</div>
+              <div className={cn(
+                "rounded-lg p-4 text-center border",
+                isExisting 
+                  ? "bg-blue-500/10 border-blue-500/20" 
+                  : "bg-amber-500/10 border-amber-500/20"
+              )}>
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  {isExisting ? 'Existing Equipment' : 'New Equipment'}
+                </span>
+                <div className={cn(
+                  "text-2xl font-mono font-bold mt-1",
+                  isExisting ? "text-blue-500" : "text-amber-500"
+                )}>{scannedId}</div>
+                {isExisting && existingEquipment && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                    Status: {existingEquipment.status === 'available' ? 'Available' : 
+                             existingEquipment.status === 'checked_out' ? 'Checked Out' : 'Broken'}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -1078,22 +1137,18 @@ function AdminBarcodeScannerModal({
                 <Button 
                   variant="outline" 
                   className="flex-1"
-                  onClick={() => {
-                    setStep('scan');
-                    setScannedId("");
-                    setFormData({ name: '', category: '', systemColor: '' });
-                  }}
+                  onClick={resetToScan}
                   data-testid="button-cancel-add"
                 >
                   Cancel
                 </Button>
                 <Button 
                   className="flex-[2] h-12 text-lg font-semibold"
-                  onClick={handleAddEquipment}
+                  onClick={handleSaveEquipment}
                   disabled={!formData.name || !formData.category}
-                  data-testid="button-add-and-next"
+                  data-testid="button-save-and-next"
                 >
-                  Add & Scan Next
+                  {isExisting ? 'Update & Scan Next' : 'Add & Scan Next'}
                 </Button>
               </div>
             </div>
