@@ -23,10 +23,7 @@ The included GitHub Actions workflow automatically builds and pushes images when
    docker compose -f docker-compose.deploy.yml up -d
    ```
 
-### First-time database setup
-```bash
-docker compose -f docker-compose.deploy.yml exec app npx drizzle-kit push
-```
+The database tables are created automatically when the container starts - no manual migration needed!
 
 ---
 
@@ -63,10 +60,7 @@ docker push YOUR_DOCKERHUB_USERNAME/plantpouch:latest
    docker compose -f docker-compose.deploy.yml up -d
    ```
 
-### First-time database setup
-```bash
-docker compose -f docker-compose.deploy.yml exec app npx drizzle-kit push
-```
+The database tables are created automatically when the container starts - no manual migration needed!
 
 ---
 
