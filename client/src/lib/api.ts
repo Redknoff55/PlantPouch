@@ -11,7 +11,7 @@ export const api = {
     },
 
     getOne: async (id: string): Promise<Equipment> => {
-      const res = await fetch(`${API_BASE}/equipment/${id}`);
+      const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}`);
       if (!res.ok) throw new Error('Failed to fetch equipment');
       return res.json();
     },
@@ -27,7 +27,7 @@ export const api = {
     },
 
     update: async (id: string, data: Partial<InsertEquipment>): Promise<Equipment> => {
-      const res = await fetch(`${API_BASE}/equipment/${id}`, {
+      const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -37,7 +37,7 @@ export const api = {
     },
 
     delete: async (id: string): Promise<void> => {
-      const res = await fetch(`${API_BASE}/equipment/${id}`, {
+      const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete equipment');
