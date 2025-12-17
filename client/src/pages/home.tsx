@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
-import type { Equipment } from "@shared/schema";
-import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin, useUpdateEquipment, useDeleteEquipment } from "@/lib/hooks";
+import type { Equipment, System } from "@shared/schema";
+import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin, useUpdateEquipment, useDeleteEquipment, useSystems, useCreateSystem, useUpdateSystem, useDeleteSystem } from "@/lib/hooks";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,7 +31,8 @@ import {
   Check,
   Pencil,
   Trash2,
-  Database
+  Database,
+  Palette
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -1405,6 +1406,301 @@ function AdminSettingsModal({
   );
 }
 
+const PRESET_COLORS = [
+  { value: '#3b82f6', label: 'Blue' },
+  { value: '#ef4444', label: 'Red' },
+  { value: '#22c55e', label: 'Green' },
+  { value: '#eab308', label: 'Yellow' },
+  { value: '#8b5cf6', label: 'Purple' },
+  { value: '#f97316', label: 'Orange' },
+  { value: '#06b6d4', label: 'Cyan' },
+  { value: '#ec4899', label: 'Pink' },
+  { value: '#6b7280', label: 'Gray' },
+];
+
+function SystemManagerModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { data: systems = [] } = useSystems();
+  const createSystem = useCreateSystem();
+  const updateSystem = useUpdateSystem();
+  const deleteSystem = useDeleteSystem();
+  const [editingItem, setEditingItem] = useState<System | null>(null);
+  const [formData, setFormData] = useState({ name: '', color: '#3b82f6' });
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleAdd = () => {
+    setIsAdding(true);
+    setFormData({ name: '', color: '#3b82f6' });
+  };
+
+  const handleSaveNew = () => {
+    if (!formData.name) return;
+    
+    createSystem.mutate({
+      name: formData.name,
+      color: formData.color
+    }, {
+      onSuccess: () => {
+        toast.success(`Added ${formData.name} system`);
+        setIsAdding(false);
+        setFormData({ name: '', color: '#3b82f6' });
+      },
+      onError: () => {
+        toast.error('Failed to create system');
+      }
+    });
+  };
+
+  const handleEdit = (item: System) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      color: item.color
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingItem) return;
+    
+    updateSystem.mutate({
+      id: editingItem.id,
+      name: formData.name,
+      color: formData.color
+    }, {
+      onSuccess: () => {
+        toast.success(`Updated ${formData.name}`);
+        setEditingItem(null);
+      },
+      onError: () => {
+        toast.error('Failed to update system');
+      }
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    deleteSystem.mutate(id, {
+      onSuccess: () => {
+        toast.success('System deleted');
+        setDeleteConfirm(null);
+      },
+      onError: () => {
+        toast.error('Failed to delete system');
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md max-h-[80vh] bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col"
+      >
+        <div className="p-6 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-purple-500/10 flex items-center justify-center">
+                <Palette className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">System Manager</h2>
+                <p className="text-xs text-muted-foreground">Add, edit, or remove color systems</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-system-manager">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {isAdding && (
+            <div className="bg-background border border-primary rounded-lg p-3 space-y-3">
+              <div className="text-sm font-medium text-primary">New System</div>
+              <Input 
+                placeholder="System Name (e.g., Purple)"
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                data-testid="input-new-system-name"
+              />
+              <div className="flex gap-2 flex-wrap">
+                {PRESET_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, color: c.value }))}
+                    className={cn(
+                      "w-8 h-8 rounded-full border-2 transition-all",
+                      formData.color === c.value ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
+                    )}
+                    style={{ backgroundColor: c.value }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={() => setIsAdding(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  size="sm" 
+                  className="flex-1"
+                  onClick={handleSaveNew}
+                  disabled={!formData.name}
+                  data-testid="button-save-new-system"
+                >
+                  Add System
+                </Button>
+              </div>
+            </div>
+          )}
+          
+          {systems.length === 0 && !isAdding ? (
+            <div className="text-center text-muted-foreground py-8">
+              No systems created yet
+            </div>
+          ) : (
+            systems.map(item => (
+              <div 
+                key={item.id}
+                className="bg-background border border-border rounded-lg p-3"
+              >
+                {editingItem?.id === item.id ? (
+                  <div className="space-y-3">
+                    <Input 
+                      placeholder="System Name"
+                      value={formData.name}
+                      onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                      data-testid={`input-edit-system-name-${item.id}`}
+                    />
+                    <div className="flex gap-2 flex-wrap">
+                      {PRESET_COLORS.map(c => (
+                        <button
+                          key={c.value}
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, color: c.value }))}
+                          className={cn(
+                            "w-8 h-8 rounded-full border-2 transition-all",
+                            formData.color === c.value ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
+                          )}
+                          style={{ backgroundColor: c.value }}
+                          title={c.label}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => setEditingItem(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={handleSaveEdit}
+                        disabled={!formData.name}
+                        data-testid={`button-save-edit-system-${item.id}`}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : deleteConfirm === item.id ? (
+                  <div className="space-y-3">
+                    <div className="text-center">
+                      <AlertTriangle className="w-8 h-8 text-destructive mx-auto mb-2" />
+                      <p className="text-sm font-medium">Delete {item.name} System?</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => setDeleteConfirm(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => handleDelete(item.id)}
+                        data-testid={`button-confirm-delete-system-${item.id}`}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div 
+                        className="w-6 h-6 rounded-full" 
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium">{item.name}</span>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => handleEdit(item)}
+                        data-testid={`button-edit-system-${item.id}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteConfirm(item.id)}
+                        data-testid={`button-delete-system-${item.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        
+        <div className="p-4 border-t border-border bg-muted/30">
+          {!isAdding && (
+            <Button 
+              className="w-full" 
+              onClick={handleAdd}
+              data-testid="button-add-system"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add New System
+            </Button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { data: equipment = [], isLoading } = useEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -1413,6 +1709,7 @@ export default function Home() {
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [isAdminSettingsOpen, setIsAdminSettingsOpen] = useState(false);
+  const [isSystemManagerOpen, setIsSystemManagerOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
@@ -1465,6 +1762,15 @@ export default function Home() {
                       data-testid="button-admin-settings"
                     >
                       <Database className="w-5 h-5" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      className="shrink-0 border-purple-500/30 text-purple-500 hover:bg-purple-500/10" 
+                      onClick={() => setIsSystemManagerOpen(true)}
+                      data-testid="button-system-manager"
+                    >
+                      <Palette className="w-5 h-5" />
                     </Button>
                   </>
                 )}
@@ -1576,6 +1882,12 @@ export default function Home() {
           <AdminSettingsModal
             isOpen={isAdminSettingsOpen}
             onClose={() => setIsAdminSettingsOpen(false)}
+          />
+        )}
+        {isSystemManagerOpen && (
+          <SystemManagerModal
+            isOpen={isSystemManagerOpen}
+            onClose={() => setIsSystemManagerOpen(false)}
           />
         )}
         {isSystemCheckoutOpen && (
