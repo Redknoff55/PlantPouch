@@ -21,7 +21,8 @@ import {
   ArrowRight,
   AlertCircle,
   RefreshCw,
-  Box
+  Box,
+  ClipboardCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -567,6 +568,198 @@ function SystemCheckoutModal({
   );
 }
 
+function SystemCheckInModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { equipment, checkInByWorkOrder } = useEquipmentStore();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [workOrder, setWorkOrder] = useState("");
+  const [reports, setReports] = useState<Record<string, { isBroken: boolean; notes: string }>>({});
+
+  // Derived state
+  const itemsInWO = equipment.filter(e => e.workOrder === workOrder && e.status === 'checked_out');
+
+  const handleLookup = () => {
+    if (itemsInWO.length > 0) {
+      setStep(2);
+    } else {
+      // Could show error toast here
+      alert("No active checkouts found for this Work Order.");
+    }
+  };
+
+  const handleSubmit = () => {
+    checkInByWorkOrder(workOrder, reports);
+    onClose();
+  };
+
+  const toggleBroken = (id: string) => {
+    setReports(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isBroken: !prev[id]?.isBroken
+      }
+    }));
+  };
+
+  const updateNotes = (id: string, notes: string) => {
+    setReports(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isBroken: prev[id]?.isBroken || false,
+        notes
+      }
+    }));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-primary" />
+              System Check In
+            </h2>
+            <p className="text-sm text-muted-foreground">Return equipment and report issues</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {step === 1 ? (
+            <div className="space-y-6 py-8">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold">Enter Work Order Number</h3>
+                <p className="text-muted-foreground text-sm max-w-xs mx-auto">
+                    Type the work order number used during checkout to retrieve the equipment list.
+                </p>
+              </div>
+
+              <div className="max-w-xs mx-auto space-y-4">
+                <Input 
+                    placeholder="e.g. WO-2024-889" 
+                    className="font-mono text-center text-lg h-12 uppercase"
+                    value={workOrder}
+                    onChange={(e) => setWorkOrder(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+                    autoFocus
+                />
+                <Button 
+                    className="w-full h-12 text-lg" 
+                    onClick={handleLookup}
+                    disabled={!workOrder}
+                >
+                    Find Order
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                  <div>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Work Order</span>
+                    <div className="font-bold text-lg font-mono">{workOrder}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider">Items Found</div>
+                    <div className="font-bold text-lg">{itemsInWO.length}</div>
+                  </div>
+               </div>
+
+               <div className="space-y-4">
+                 <Label>Equipment Inspection</Label>
+                 <div className="space-y-3">
+                    {itemsInWO.map(item => {
+                        const isBroken = reports[item.id]?.isBroken;
+
+                        return (
+                            <div key={item.id} className={cn(
+                                "p-4 rounded-lg border transition-all space-y-3",
+                                isBroken ? "border-destructive bg-destructive/5" : "border-border bg-card"
+                            )}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-medium">{item.name}</span>
+                                            <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">{item.category}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor={`broken-${item.id}`} className={cn("text-xs cursor-pointer", isBroken ? "text-destructive font-bold" : "text-muted-foreground")}>
+                                            {isBroken ? "NEEDS REPAIR" : "Good Condition"}
+                                        </Label>
+                                        <Switch 
+                                            id={`broken-${item.id}`}
+                                            checked={isBroken}
+                                            onCheckedChange={() => toggleBroken(item.id)}
+                                            className="data-[state=checked]:bg-destructive"
+                                        />
+                                    </div>
+                                </div>
+
+                                {isBroken && (
+                                    <motion.div 
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        className="pt-2"
+                                    >
+                                        <Label className="text-xs text-destructive mb-1.5 block flex items-center gap-1">
+                                            <AlertTriangle className="w-3 h-3" /> Issue Description
+                                        </Label>
+                                        <Input 
+                                            className="bg-background"
+                                            placeholder="Describe the damage or issue..."
+                                            value={reports[item.id]?.notes || ''}
+                                            onChange={(e) => updateNotes(item.id, e.target.value)}
+                                        />
+                                    </motion.div>
+                                )}
+                            </div>
+                        );
+                    })}
+                 </div>
+               </div>
+
+               <div className="pt-4 border-t border-border flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>
+                    Back
+                  </Button>
+                  <Button 
+                    className="flex-[2] h-12 text-lg font-bold" 
+                    onClick={handleSubmit}
+                  >
+                    Complete Check In
+                  </Button>
+               </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function AddEquipmentModal({ 
   isOpen, 
   onClose 
@@ -681,6 +874,7 @@ export default function Home() {
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
+  const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
   const selectedEquipment = selectedEquipmentId ? getEquipment(selectedEquipmentId) : null;
@@ -744,13 +938,21 @@ export default function Home() {
               SYSTEM CHECKOUT
           </button>
           <button 
-              onClick={() => setIsScannerOpen(true)}
-              className="py-6 rounded-xl bg-card border border-primary/20 text-foreground font-bold text-lg shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+              onClick={() => setIsSystemCheckInOpen(true)}
+              className="py-6 rounded-xl bg-secondary text-secondary-foreground font-bold text-lg shadow-sm hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
           >
-              <QrCode className="w-8 h-8 text-primary" />
-              SINGLE SCAN
+              <ClipboardCheck className="w-8 h-8" />
+              SYSTEM CHECK IN
           </button>
         </div>
+        
+        <button 
+            onClick={() => setIsScannerOpen(true)}
+            className="w-full py-4 rounded-xl bg-card border border-primary/20 text-foreground font-bold text-base shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+        >
+            <QrCode className="w-5 h-5 text-primary" />
+            SINGLE QR SCAN
+        </button>
 
         {/* Equipment List */}
         <div className="space-y-4">
@@ -795,6 +997,12 @@ export default function Home() {
           <SystemCheckoutModal
             isOpen={isSystemCheckoutOpen}
             onClose={() => setIsSystemCheckoutOpen(false)}
+          />
+        )}
+        {isSystemCheckInOpen && (
+          <SystemCheckInModal
+            isOpen={isSystemCheckInOpen}
+            onClose={() => setIsSystemCheckInOpen(false)}
           />
         )}
         {selectedEquipmentId && (

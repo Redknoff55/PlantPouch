@@ -27,6 +27,7 @@ interface EquipmentStore {
   checkOut: (id: string, workOrder: string, techName: string) => void;
   checkIn: (id: string, notes: string, isBroken: boolean) => void;
   checkOutSystem: (systemColor: string, equipmentIds: string[], workOrder: string, techName: string) => void;
+  checkInByWorkOrder: (workOrder: string, itemReports: Record<string, { isBroken: boolean; notes: string }>) => void;
   updateEquipmentSystem: (id: string, newSystemColor: string) => void;
   addEquipment: (equipment: Omit<Equipment, 'history' | 'status'>) => void;
   getEquipment: (id: string) => Equipment | undefined;
@@ -203,19 +204,39 @@ export const useEquipmentStore = create<EquipmentStore>()(
                 ]
               };
             }
-            // Logic to handle "removed" items? 
-            // If an item WAS in this system but IS NOT in the equipmentIds list (because it was swapped out),
-            // we should probably leave it as is (available/broken) but potentially unset its system color if it was swapped out?
-            // For now, let's keep it simple: We just checkout the new list.
-            
-            // However, if we swapped items, the OLD item needs to have its systemColor removed if we want to be strict,
-            // or we just leave it. The user said "update data base to reflect changes".
-            // Let's assume if we pick a replacement, the replacement becomes the new system part.
-            // The old part remains 'available' (or broken) but still tagged with the color until someone changes it?
-            // Actually, if I swap "Spare A" into "Blue System", "Spare A" becomes "Blue".
-            // What happens to the old "Blue" item? It probably shouldn't be "Blue" anymore if it's permanently replaced?
-            // Let's just handle the checkout status for now.
             return eq;
+          })
+        }));
+      },
+
+      checkInByWorkOrder: (workOrder, itemReports) => {
+        set((state) => ({
+          equipment: state.equipment.map((eq) => {
+            // Only affect items with this work order that are currently checked out
+            if (eq.workOrder !== workOrder || eq.status !== 'checked_out') return eq;
+
+            const report = itemReports[eq.id] || { isBroken: false, notes: '' };
+            const newStatus = report.isBroken ? 'broken' : 'available';
+            const action = report.isBroken ? 'report_broken' : 'check_in';
+            const notes = report.notes || (report.isBroken ? 'Reported broken during system check-in' : 'Returned via system check-in');
+
+            return {
+              ...eq,
+              status: newStatus,
+              workOrder: undefined,
+              checkedOutBy: undefined,
+              checkedOutAt: undefined,
+              notes: notes, // Update notes
+              history: [
+                {
+                  action,
+                  timestamp: new Date().toISOString(),
+                  details: notes,
+                  workOrder // Record which WO it came back from
+                },
+                ...eq.history
+              ]
+            };
           })
         }));
       },
