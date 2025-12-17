@@ -62,14 +62,12 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => void }) {
+function EquipmentListItem({ item, onClick, systems }: { item: Equipment; onClick: () => void; systems: System[] }) {
   const isBroken = item.status === 'broken';
-  const systemColors: Record<string, string> = {
-    'Blue': 'border-l-4 border-l-blue-500',
-    'Red': 'border-l-4 border-l-red-500',
-    'Green': 'border-l-4 border-l-green-500',
-    'Yellow': 'border-l-4 border-l-yellow-500',
-  };
+  
+  const systemColorStyle = item.systemColor 
+    ? systems.find(s => s.name === item.systemColor)?.color 
+    : undefined;
 
   return (
     <motion.div
@@ -80,8 +78,9 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
         isBroken 
           ? "border-destructive/50 hover:border-destructive bg-destructive/5 shadow-destructive/5" 
           : "border-border hover:border-primary/50 bg-card hover:bg-muted/30",
-         item.systemColor && systemColors[item.systemColor]
+        systemColorStyle && "border-l-4"
       )}
+      style={systemColorStyle ? { borderLeftColor: systemColorStyle } : undefined}
     >
       {isBroken && (
         <div className="absolute top-0 right-0 p-1.5 bg-destructive rounded-bl-lg">
@@ -367,6 +366,7 @@ function SystemCheckoutModal({
   onClose: () => void 
 }) {
   const { data: equipment = [] } = useEquipment();
+  const { data: systems = [] } = useSystems();
   const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedColor, setSelectedColor] = useState<string>("");
@@ -440,30 +440,33 @@ function SystemCheckoutModal({
             <div className="space-y-4">
               <Label>Select System Color</Label>
               <div className="grid grid-cols-2 gap-3">
-                {['Blue', 'Red', 'Yellow', 'Green'].map(color => {
-                    // Check if we have items for this color
-                    const hasItems = systemColors.includes(color);
+                {systems.length === 0 ? (
+                  <div className="col-span-2 text-center text-muted-foreground py-8">
+                    No systems configured. Add systems in the System Manager.
+                  </div>
+                ) : (
+                  systems.map(system => {
+                    const hasItems = systemColors.includes(system.name);
                     return (
                         <Button
-                            key={color}
+                            key={system.id}
                             variant="outline"
                             className={cn(
                                 "h-20 text-lg font-semibold border-2 relative overflow-hidden",
                                 hasItems ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
                             )}
-                            onClick={() => hasItems && handleColorSelect(color)}
+                            onClick={() => hasItems && handleColorSelect(system.name)}
                             disabled={!hasItems}
                         >
-                            <div className={cn("absolute inset-y-0 left-0 w-2", {
-                                'bg-blue-500': color === 'Blue',
-                                'bg-red-500': color === 'Red',
-                                'bg-yellow-500': color === 'Yellow',
-                                'bg-green-500': color === 'Green',
-                            })} />
-                            {color} System
+                            <div 
+                              className="absolute inset-y-0 left-0 w-2" 
+                              style={{ backgroundColor: system.color }}
+                            />
+                            {system.name} System
                         </Button>
                     );
-                })}
+                  })
+                )}
               </div>
             </div>
           ) : (
@@ -780,6 +783,7 @@ function AddEquipmentModal({
   onClose: () => void 
 }) {
   const createEquipment = useCreateEquipment();
+  const { data: systems = [] } = useSystems();
   const [formData, setFormData] = useState({
     id: '',
     name: '',
@@ -796,11 +800,13 @@ function AddEquipmentModal({
       return;
     }
     
+    const normalizedSystemColor = formData.systemColor && formData.systemColor !== 'none' ? formData.systemColor : undefined;
+    
     createEquipment.mutate({
       id: formData.id,
       name: formData.name,
       category: formData.category,
-      systemColor: formData.systemColor || undefined,
+      systemColor: normalizedSystemColor,
       status: 'available'
     }, {
       onSuccess: () => {
@@ -873,10 +879,14 @@ function AddEquipmentModal({
                       <SelectValue placeholder="Select a system color..." />
                   </SelectTrigger>
                   <SelectContent>
-                      <SelectItem value="Blue">Blue System</SelectItem>
-                      <SelectItem value="Red">Red System</SelectItem>
-                      <SelectItem value="Green">Green System</SelectItem>
-                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                      {systems.map(system => (
+                        <SelectItem key={system.id} value={system.name}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: system.color }} />
+                            {system.name} System
+                          </div>
+                        </SelectItem>
+                      ))}
                   </SelectContent>
               </Select>
             </div>
@@ -903,6 +913,7 @@ function AdminBarcodeScannerModal({
   onClose: () => void 
 }) {
   const { data: allEquipment = [] } = useEquipment();
+  const { data: systems = [] } = useSystems();
   const createEquipment = useCreateEquipment();
   const updateEquipment = useUpdateEquipment();
   const [scannedId, setScannedId] = useState("");
@@ -944,12 +955,14 @@ function AdminBarcodeScannerModal({
   const handleSaveEquipment = () => {
     if (!scannedId || !formData.name || !formData.category) return;
     
+    const normalizedSystemColor = formData.systemColor && formData.systemColor !== 'none' ? formData.systemColor : undefined;
+    
     if (isExisting) {
       updateEquipment.mutate({
         id: scannedId,
         name: formData.name,
         category: formData.category,
-        systemColor: formData.systemColor || undefined,
+        systemColor: normalizedSystemColor,
       }, {
         onSuccess: () => {
           toast.success(`Updated ${scannedId}`);
@@ -965,7 +978,7 @@ function AdminBarcodeScannerModal({
         id: scannedId,
         name: formData.name,
         category: formData.category,
-        systemColor: formData.systemColor || undefined,
+        systemColor: normalizedSystemColor,
         status: 'available'
       }, {
         onSuccess: () => {
@@ -1125,10 +1138,14 @@ function AdminBarcodeScannerModal({
                       <SelectValue placeholder="Select a system color..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Blue">Blue System</SelectItem>
-                      <SelectItem value="Red">Red System</SelectItem>
-                      <SelectItem value="Green">Green System</SelectItem>
-                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                      {systems.map(system => (
+                        <SelectItem key={system.id} value={system.name}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: system.color }} />
+                            {system.name} System
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1168,6 +1185,7 @@ function AdminSettingsModal({
   onClose: () => void 
 }) {
   const { data: equipment = [] } = useEquipment();
+  const { data: systems = [] } = useSystems();
   const updateEquipment = useUpdateEquipment();
   const deleteEquipment = useDeleteEquipment();
   const [editingItem, setEditingItem] = useState<Equipment | null>(null);
@@ -1195,11 +1213,13 @@ function AdminSettingsModal({
   const handleSaveEdit = () => {
     if (!editingItem) return;
     
+    const normalizedSystemColor = formData.systemColor && formData.systemColor !== 'none' ? formData.systemColor : undefined;
+    
     updateEquipment.mutate({
       id: editingItem.id,
       name: formData.name,
       category: formData.category,
-      systemColor: formData.systemColor || undefined
+      systemColor: normalizedSystemColor
     }, {
       onSuccess: () => {
         toast.success(`Updated ${editingItem.id}`);
@@ -1297,10 +1317,14 @@ function AdminSettingsModal({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">No Color</SelectItem>
-                          <SelectItem value="Blue">Blue System</SelectItem>
-                          <SelectItem value="Red">Red System</SelectItem>
-                          <SelectItem value="Green">Green System</SelectItem>
-                          <SelectItem value="Yellow">Yellow System</SelectItem>
+                          {systems.map(system => (
+                            <SelectItem key={system.id} value={system.name}>
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: system.color }} />
+                                {system.name} System
+                              </div>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -1703,6 +1727,7 @@ function SystemManagerModal({
 
 export default function Home() {
   const { data: equipment = [], isLoading } = useEquipment();
+  const { data: systems = [] } = useSystems();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -1847,6 +1872,7 @@ export default function Home() {
                     <EquipmentListItem 
                         key={item.id} 
                         item={item} 
+                        systems={systems}
                         onClick={() => setSelectedEquipmentId(item.id)} 
                     />
                 ))}
