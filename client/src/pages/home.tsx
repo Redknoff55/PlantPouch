@@ -23,7 +23,10 @@ import {
   AlertCircle,
   RefreshCw,
   Box,
-  ClipboardCheck
+  ClipboardCheck,
+  ScanBarcode,
+  Settings,
+  Check
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -283,8 +286,7 @@ function ActionModal({
                                 <p className="text-muted-foreground text-sm">This item is flagged as broken. Repair maintenance required before it can be checked out.</p>
                             </div>
                             <Button className="w-full" variant="secondary" onClick={() => {
-                                // Simple "Fix" workflow for prototype
-                                checkIn(equipment.id, "Repaired and returned to service", false);
+                                checkin.mutate({ id: equipment.id, notes: "Repaired and returned to service", isBroken: false });
                                 onClose();
                             }}>
                                 Mark as Repaired (Admin)
@@ -875,12 +877,229 @@ function AddEquipmentModal({
   );
 }
 
+function AdminBarcodeScannerModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const createEquipment = useCreateEquipment();
+  const [scannedId, setScannedId] = useState("");
+  const [manualBarcode, setManualBarcode] = useState("");
+  const [formData, setFormData] = useState({
+    name: '',
+    category: '',
+    systemColor: ''
+  });
+  const [addedItems, setAddedItems] = useState<string[]>([]);
+  const [step, setStep] = useState<'scan' | 'details'>('scan');
+
+  if (!isOpen) return null;
+
+  const handleScan = (barcode: string) => {
+    setScannedId(barcode);
+    setStep('details');
+  };
+
+  const handleSimulatedScan = () => {
+    const barcode = manualBarcode || `EQ-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+    handleScan(barcode);
+  };
+
+  const handleAddEquipment = () => {
+    if (!scannedId || !formData.name || !formData.category) return;
+    
+    createEquipment.mutate({
+      id: scannedId,
+      name: formData.name,
+      category: formData.category,
+      systemColor: formData.systemColor || undefined,
+      status: 'available'
+    });
+    
+    setAddedItems(prev => [...prev, scannedId]);
+    setScannedId("");
+    setFormData({ name: '', category: '', systemColor: '' });
+    setManualBarcode("");
+    setStep('scan');
+  };
+
+  const handleClose = () => {
+    setScannedId("");
+    setFormData({ name: '', category: '', systemColor: '' });
+    setManualBarcode("");
+    setAddedItems([]);
+    setStep('scan');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <ScanBarcode className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Barcode Import</h2>
+                <p className="text-xs text-muted-foreground">Admin - Quick Equipment Add</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={handleClose} data-testid="button-close-barcode">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {addedItems.length > 0 && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-emerald-500 text-sm font-medium mb-2">
+                <Check className="w-4 h-4" />
+                Added {addedItems.length} item(s)
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {addedItems.map(id => (
+                  <Badge key={id} variant="outline" className="text-xs font-mono">
+                    {id}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 'scan' && (
+            <div className="space-y-4">
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden border-2 border-amber-500/30 flex items-center justify-center cursor-pointer" onClick={handleSimulatedScan}>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-full h-1 bg-amber-500/50 animate-pulse" />
+                </div>
+                <div className="absolute inset-x-8 top-8 bottom-8 border-2 border-dashed border-amber-500/40 rounded flex items-center justify-center">
+                  <ScanBarcode className="w-16 h-16 text-amber-500/30" />
+                </div>
+                <div className="absolute bottom-4 text-center">
+                  <span className="text-amber-500/70 text-xs animate-pulse">Tap to simulate barcode scan</span>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or enter barcode manually</span>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Enter barcode value..." 
+                    value={manualBarcode}
+                    onChange={(e) => setManualBarcode(e.target.value)}
+                    className="font-mono uppercase"
+                    data-testid="input-manual-barcode"
+                  />
+                  <Button onClick={handleSimulatedScan} data-testid="button-scan-barcode">
+                    Scan
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 'details' && (
+            <div className="space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-center">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Scanned Barcode</span>
+                <div className="text-2xl font-mono font-bold text-amber-500 mt-1">{scannedId}</div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Equipment Name *</Label>
+                  <Input 
+                    placeholder="e.g. Fluke 87V Multimeter" 
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    data-testid="input-equipment-name"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Category *</Label>
+                  <Input 
+                    placeholder="e.g. Measurement, Analysis, Pressure" 
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    data-testid="input-equipment-category"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>System Color (Optional)</Label>
+                  <Select 
+                    value={formData.systemColor} 
+                    onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
+                  >
+                    <SelectTrigger data-testid="select-system-color">
+                      <SelectValue placeholder="Select a system color..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Blue">Blue System</SelectItem>
+                      <SelectItem value="Red">Red System</SelectItem>
+                      <SelectItem value="Green">Green System</SelectItem>
+                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setStep('scan');
+                    setScannedId("");
+                    setFormData({ name: '', category: '', systemColor: '' });
+                  }}
+                  data-testid="button-cancel-add"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="flex-[2] h-12 text-lg font-semibold"
+                  onClick={handleAddEquipment}
+                  disabled={!formData.name || !formData.category}
+                  data-testid="button-add-and-next"
+                >
+                  Add & Scan Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { data: equipment = [], isLoading } = useEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
@@ -913,11 +1132,28 @@ export default function Home() {
             </div>
             
             <div className="flex gap-2">
-                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)}>
+                {isAdminMode && (
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    className="shrink-0 border-amber-500/30 text-amber-500 hover:bg-amber-500/10" 
+                    onClick={() => setIsBarcodeScannerOpen(true)}
+                    data-testid="button-barcode-scanner"
+                  >
+                    <ScanBarcode className="w-5 h-5" />
+                  </Button>
+                )}
+                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
                    <Plus className="w-5 h-5" />
                 </Button>
-                <Button variant="outline" size="icon" className="shrink-0 rounded-full">
-                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <Button 
+                  variant={isAdminMode ? "default" : "outline"}
+                  size="icon" 
+                  className={cn("shrink-0", isAdminMode && "bg-amber-500 hover:bg-amber-600")}
+                  onClick={() => setIsAdminMode(!isAdminMode)}
+                  data-testid="button-toggle-admin"
+                >
+                   <Settings className="w-5 h-5" />
                 </Button>
             </div>
         </div>
@@ -1003,6 +1239,12 @@ export default function Home() {
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)} 
+          />
+        )}
+        {isBarcodeScannerOpen && (
+          <AdminBarcodeScannerModal
+            isOpen={isBarcodeScannerOpen}
+            onClose={() => setIsBarcodeScannerOpen(false)}
           />
         )}
         {isSystemCheckoutOpen && (
