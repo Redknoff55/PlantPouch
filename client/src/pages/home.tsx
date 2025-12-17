@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Equipment } from "@shared/schema";
 import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -785,7 +786,10 @@ function AddEquipmentModal({
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    if (!formData.id || !formData.name || !formData.category) return;
+    if (!formData.id || !formData.name || !formData.category) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
     
     createEquipment.mutate({
       id: formData.id,
@@ -793,10 +797,16 @@ function AddEquipmentModal({
       category: formData.category,
       systemColor: formData.systemColor || undefined,
       status: 'available'
+    }, {
+      onSuccess: () => {
+        toast.success(`Equipment ${formData.id} added successfully`);
+        setFormData({ id: '', name: '', category: '', systemColor: '', status: 'available' });
+        onClose();
+      },
+      onError: (error) => {
+        toast.error(`Failed to add equipment: ${error.message}`);
+      }
     });
-    
-    setFormData({ id: '', name: '', category: '', systemColor: '', status: 'available' });
-    onClose();
   };
 
   return (
@@ -818,30 +828,33 @@ function AddEquipmentModal({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Equipment ID (QR Code)</Label>
+              <Label>Equipment ID (QR Code) <span className="text-destructive">*</span></Label>
               <Input 
                 placeholder="e.g. EQ-006" 
                 className="font-mono uppercase"
                 value={formData.id}
                 onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
+                data-testid="input-add-equipment-id"
               />
             </div>
             
             <div className="space-y-2">
-              <Label>Equipment Name</Label>
+              <Label>Equipment Name <span className="text-destructive">*</span></Label>
               <Input 
                 placeholder="e.g. Fluke Thermal Imager" 
                 value={formData.name}
                 onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                data-testid="input-add-equipment-name"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Category</Label>
+              <Label>Category <span className="text-destructive">*</span></Label>
               <Input 
                 placeholder="e.g. Measurement" 
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                data-testid="input-add-equipment-category"
               />
             </div>
 
