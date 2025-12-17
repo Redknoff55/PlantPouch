@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useEquipmentStore, Equipment } from "@/lib/store";
+import type { Equipment } from "@shared/schema";
+import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,14 +33,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 // --- Components ---
 
-function StatusBadge({ status }: { status: Equipment['status'] }) {
-  const styles = {
+function StatusBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
     available: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20",
     checked_out: "bg-blue-500/10 text-blue-500 border-blue-500/20",
     broken: "bg-red-500/10 text-red-500 border-red-500/20",
   };
 
-  const labels = {
+  const labels: Record<string, string> = {
     available: "Available",
     checked_out: "Checked Out",
     broken: "Needs Repair",
@@ -110,12 +111,12 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
 
 function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClose: () => void }) {
   const [manualId, setManualId] = useState("");
-  const { equipment } = useEquipmentStore();
+  const { data: equipment = [] } = useEquipment();
 
   const handleSimulatedScan = () => {
     // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || equipment[Math.floor(Math.random() * equipment.length)].id;
-    onScan(targetId);
+    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : '');
+    if (targetId) onScan(targetId);
   };
 
   return (
@@ -182,7 +183,8 @@ function ActionModal({
   isOpen: boolean; 
   onClose: () => void 
 }) {
-  const { checkOut, checkIn } = useEquipmentStore();
+  const checkout = useCheckout();
+  const checkin = useCheckin();
   const [step, setStep] = useState<'details' | 'process'>('details');
   
   // Checkout State
@@ -199,9 +201,9 @@ function ActionModal({
 
   const handleSubmit = () => {
     if (isCheckingOut) {
-      checkOut(equipment.id, workOrder, "Tech #01"); // Hardcoded tech for now
+      checkout.mutate({ id: equipment.id, workOrder, techName: "Tech #01" });
     } else {
-      checkIn(equipment.id, notes, isBroken);
+      checkin.mutate({ id: equipment.id, notes, isBroken });
     }
     onClose();
     // Reset state
@@ -356,7 +358,8 @@ function SystemCheckoutModal({
   isOpen: boolean; 
   onClose: () => void 
 }) {
-  const { equipment, checkOutSystem } = useEquipmentStore();
+  const { data: equipment = [] } = useEquipment();
+  const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedColor, setSelectedColor] = useState<string>("");
   const [workOrder, setWorkOrder] = useState("");
@@ -396,7 +399,7 @@ function SystemCheckoutModal({
     // Collect all final IDs to checkout
     const finalIds = Object.values(verifiedItems);
     
-    checkOutSystem(selectedColor, finalIds, workOrder, "Tech #01");
+    checkoutSystem.mutate({ systemColor: selectedColor, equipmentIds: finalIds, workOrder, techName: "Tech #01" });
     onClose();
   };
 
@@ -575,7 +578,8 @@ function SystemCheckInModal({
   isOpen: boolean; 
   onClose: () => void 
 }) {
-  const { equipment, checkInByWorkOrder } = useEquipmentStore();
+  const { data: equipment = [] } = useEquipment();
+  const checkinByWorkOrder = useCheckinByWorkOrder();
   const [step, setStep] = useState<1 | 2>(1);
   const [workOrder, setWorkOrder] = useState("");
   const [reports, setReports] = useState<Record<string, { isBroken: boolean; notes: string }>>({});
@@ -593,7 +597,7 @@ function SystemCheckInModal({
   };
 
   const handleSubmit = () => {
-    checkInByWorkOrder(workOrder, reports);
+    checkinByWorkOrder.mutate({ workOrder, itemReports: reports });
     onClose();
   };
 
@@ -767,12 +771,13 @@ function AddEquipmentModal({
   isOpen: boolean; 
   onClose: () => void 
 }) {
-  const { addEquipment } = useEquipmentStore();
+  const createEquipment = useCreateEquipment();
   const [formData, setFormData] = useState({
     id: '',
     name: '',
     category: '',
-    systemColor: ''
+    systemColor: '',
+    status: 'available'
   });
 
   if (!isOpen) return null;
@@ -780,14 +785,15 @@ function AddEquipmentModal({
   const handleSubmit = () => {
     if (!formData.id || !formData.name || !formData.category) return;
     
-    addEquipment({
+    createEquipment.mutate({
       id: formData.id,
       name: formData.name,
       category: formData.category,
-      systemColor: formData.systemColor || undefined
+      systemColor: formData.systemColor || undefined,
+      status: 'available'
     });
     
-    setFormData({ id: '', name: '', category: '', systemColor: '' });
+    setFormData({ id: '', name: '', category: '', systemColor: '', status: 'available' });
     onClose();
   };
 
@@ -870,20 +876,26 @@ function AddEquipmentModal({
 }
 
 export default function Home() {
-  const { equipment, getEquipment } = useEquipmentStore();
+  const { data: equipment = [], isLoading } = useEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
-  const selectedEquipment = selectedEquipmentId ? getEquipment(selectedEquipmentId) : null;
+  const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   
   const stats = {
     total: equipment.length,
     out: equipment.filter(e => e.status === 'checked_out').length,
     broken: equipment.filter(e => e.status === 'broken').length,
   };
+  
+  if (isLoading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-muted-foreground">Loading...</div>
+    </div>;
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-20">
