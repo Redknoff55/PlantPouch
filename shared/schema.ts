@@ -17,6 +17,12 @@ export const equipment = pgTable("equipment", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const systems = pgTable("systems", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  color: text("color").notNull(),
+});
+
 export const equipmentHistory = pgTable("equipment_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: 'cascade' }),
@@ -36,7 +42,13 @@ export const insertEquipmentHistorySchema = createInsertSchema(equipmentHistory)
   timestamp: true,
 });
 
+export const insertSystemSchema = createInsertSchema(systems).omit({
+  id: true,
+});
+
 export type Equipment = typeof equipment.$inferSelect;
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type EquipmentHistory = typeof equipmentHistory.$inferSelect;
 export type InsertEquipmentHistory = z.infer<typeof insertEquipmentHistorySchema>;
+export type System = typeof systems.$inferSelect;
+export type InsertSystem = z.infer<typeof insertSystemSchema>;
