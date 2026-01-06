@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Equipment } from "@shared/schema";
 import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
 import { toast } from "sonner";
@@ -115,12 +115,94 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
 
 function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClose: () => void }) {
   const [manualId, setManualId] = useState("");
-  const { data: equipment = [] } = useEquipment();
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
 
-  const handleSimulatedScan = () => {
-    // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : '');
-    if (targetId) onScan(targetId);
+  const stopScanner = () => {
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setIsScanning(false);
+  };
+
+  useEffect(() => {
+    return () => stopScanner();
+  }, []);
+
+  const startScanner = async () => {
+    if (!("BarcodeDetector" in window)) {
+      setScanError("QR scanning isn't supported in this browser. Use manual entry below.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanError("Camera access isn't available in this browser. Use manual entry below.");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setScanError("Camera access requires HTTPS or localhost. Use a secure URL or manual entry.");
+      return;
+    }
+
+    stopScanner();
+    setIsStarting(true);
+    setScanError(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      setIsScanning(true);
+
+      const scanFrame = async () => {
+        if (!videoRef.current) return;
+
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          const result = barcodes[0]?.rawValue?.trim();
+          if (result) {
+            stopScanner();
+            onScan(result);
+            return;
+          }
+        } catch {
+          setScanError("Unable to read a QR code. Try better lighting or manual entry.");
+        }
+
+        animationFrameRef.current = requestAnimationFrame(scanFrame);
+      };
+
+      animationFrameRef.current = requestAnimationFrame(scanFrame);
+    } catch {
+      setScanError("Camera access was blocked. Enable permissions or use manual entry.");
+      stopScanner();
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleManualScan = () => {
+    const targetId = manualId.trim();
+    if (!targetId) {
+      setScanError("Enter an equipment ID before identifying.");
+      return;
+    }
+    onScan(targetId);
   };
 
   return (
@@ -134,20 +216,33 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
           <CardDescription>Align the QR code within the frame</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center" onClick={handleSimulatedScan}>
-            <div className="absolute inset-0 border-[40px] border-black/50 z-10"></div>
-            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative">
+          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center">
+            <video
+              ref={videoRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              muted
+              playsInline
+            />
+            <div className="absolute inset-0 border-[40px] border-black/50 z-10 pointer-events-none"></div>
+            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative pointer-events-none">
                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
             </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
-                <span className="text-muted-foreground text-xs animate-bounce">Tap to simulate scan</span>
+            <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
+              <span className="text-muted-foreground text-xs text-center px-4">
+                {scanError ? scanError : (isScanning ? "Point the camera at a QR code to scan." : "Camera is off. Tap start below.")}
+              </span>
             </div>
           </div>
           
           <div className="space-y-4">
+            <div className="flex justify-center">
+              <Button onClick={startScanner} disabled={isStarting || isScanning}>
+                {isStarting ? "Starting camera..." : (isScanning ? "Camera active" : "Start camera")}
+              </Button>
+            </div>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-border" />
@@ -164,7 +259,7 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
                 onChange={(e) => setManualId(e.target.value)}
                 className="font-mono uppercase"
               />
-              <Button onClick={handleSimulatedScan}>
+              <Button onClick={handleManualScan}>
                 Identify
               </Button>
             </div>
