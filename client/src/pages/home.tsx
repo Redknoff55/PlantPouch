@@ -2041,6 +2041,7 @@ function AdminImportModal({
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
   const adminEnabled = mode === "admin";
+  const updateEquipment = useUpdateEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -2052,6 +2053,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
   const canManageEquipment = adminEnabled && isAdminMode;
+  const [expandedPanels, setExpandedPanels] = useState({
+    good: false,
+    broken: false,
+    repairs: false,
+  });
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2134,6 +2140,28 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     system.items.some((item) => getLocation(item) === "Repairs")
   );
 
+  const groupItemsBySystem = (items: Equipment[]) =>
+    Object.values(
+      items.reduce((acc, item) => {
+        const key = item.systemColor || "Unassigned";
+        if (!acc[key]) {
+          acc[key] = { color: key, items: [] as Equipment[] };
+        }
+        acc[key].items.push(item);
+        return acc;
+      }, {} as Record<string, { color: string; items: Equipment[] }>)
+    );
+
+  const goodSystemItems = groupItemsBySystem(
+    goodSystemsInShop.flatMap((system) => system.items)
+  );
+  const brokenItems = groupItemsBySystem(
+    equipment.filter((item) => item.status === "broken")
+  );
+  const repairItems = groupItemsBySystem(
+    equipment.filter((item) => getLocation(item) === "Repairs")
+  );
+
   useEffect(() => {
     try {
       localStorage.setItem(brandingStorageKey, JSON.stringify(brandingState));
@@ -2154,6 +2182,52 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+  };
+
+  const togglePanel = (key: keyof typeof expandedPanels) => {
+    setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSendToRepairs = (item: Equipment) => {
+    updateEquipment.mutate(
+      {
+        id: item.id,
+        data: {
+          location: "Repairs",
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${item.id} sent for repairs.`);
+        },
+        onError: (error) => {
+          toast.error(`Failed to update ${item.id}: ${error.message}`);
+        },
+      }
+    );
+  };
+
+  const handleReturnFromRepairs = (item: Equipment) => {
+    updateEquipment.mutate(
+      {
+        id: item.id,
+        data: {
+          status: "available",
+          location: "Shop",
+          workOrder: undefined,
+          checkedOutBy: undefined,
+          checkedOutAt: undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${item.id} returned to shop.`);
+        },
+        onError: (error) => {
+          toast.error(`Failed to update ${item.id}: ${error.message}`);
+        },
+      }
+    );
   };
 
   const handleResetBranding = () => {
@@ -2312,9 +2386,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
-                <Badge variant="outline" className="text-[10px] font-mono">
-                  {goodSystemsInShop.length}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono">
+                    {goodSystemsInShop.length}
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={() => togglePanel("good")}>
+                    {expandedPanels.good ? "Hide" : "View"}
+                  </Button>
+                </div>
               </div>
               {goodSystemsInShop.length === 0 ? (
                 <div className="text-xs text-muted-foreground">No complete systems ready.</div>
@@ -2327,14 +2406,36 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   ))}
                 </div>
               )}
+              {expandedPanels.good && (
+                <div className="mt-3 space-y-2">
+                  {goodSystemItems.map((group) => (
+                    <div key={group.color} className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                      {group.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                          <span className="font-mono">{item.id}</span>
+                          <span className="text-muted-foreground">
+                            {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "—"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Broken Systems</h3>
-                <Badge variant="outline" className="text-[10px] font-mono">
-                  {brokenSystems.length}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono">
+                    {brokenSystems.length}
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={() => togglePanel("broken")}>
+                    {expandedPanels.broken ? "Hide" : "View"}
+                  </Button>
+                </div>
               </div>
               {brokenSystems.length === 0 ? (
                 <div className="text-xs text-muted-foreground">No broken systems.</div>
@@ -2347,14 +2448,41 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   ))}
                 </div>
               )}
+              {expandedPanels.broken && (
+                <div className="mt-3 space-y-2">
+                  {brokenItems.map((group) => (
+                    <div key={group.color} className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                      {group.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                          <span className="font-mono">{item.id}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[10px]"
+                            onClick={() => handleSendToRepairs(item)}
+                          >
+                            Send to Repairs
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Sent for Repairs</h3>
-                <Badge variant="outline" className="text-[10px] font-mono">
-                  {repairSystems.length}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono">
+                    {repairSystems.length}
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={() => togglePanel("repairs")}>
+                    {expandedPanels.repairs ? "Hide" : "View"}
+                  </Button>
+                </div>
               </div>
               {repairSystems.length === 0 ? (
                 <div className="text-xs text-muted-foreground">Nothing out for repair.</div>
@@ -2363,6 +2491,28 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   {repairSystems.map((system) => (
                     <div key={system.color} className="text-xs font-medium">
                       {system.color} System ({system.items.length})
+                    </div>
+                  ))}
+                </div>
+              )}
+              {expandedPanels.repairs && (
+                <div className="mt-3 space-y-2">
+                  {repairItems.map((group) => (
+                    <div key={group.color} className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                      {group.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                          <span className="font-mono">{item.id}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[10px]"
+                            onClick={() => handleReturnFromRepairs(item)}
+                          >
+                            Is it back?
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
