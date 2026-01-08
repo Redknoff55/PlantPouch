@@ -69,7 +69,19 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => void }) {
+function EquipmentListItem({
+  item,
+  onClick,
+  selectable,
+  selected,
+  onToggleSelect,
+}: {
+  item: Equipment;
+  onClick: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
+}) {
   const isBroken = item.status === 'broken';
 
   return (
@@ -82,6 +94,15 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
+            {selectable && (
+              <Checkbox
+                checked={!!selected}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleSelect?.(item.id);
+                }}
+              />
+            )}
             <Box className="w-4 h-4 text-muted-foreground shrink-0" />
             {item.systemColor && (
               <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
@@ -331,12 +352,14 @@ function EditEquipmentModal({
   isOpen,
   onClose,
   locationOptions,
+  systemColorOptions,
   onAddLocation,
 }: {
   equipment: Equipment;
   isOpen: boolean;
   onClose: () => void;
   locationOptions: string[];
+  systemColorOptions: string[];
   onAddLocation: (value: string) => void;
 }) {
   const updateEquipment = useUpdateEquipment();
@@ -434,10 +457,11 @@ function EditEquipmentModal({
                   <SelectValue placeholder="Select a system color..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Blue">Blue System</SelectItem>
-                  <SelectItem value="Red">Red System</SelectItem>
-                  <SelectItem value="Green">Green System</SelectItem>
-                  <SelectItem value="Yellow">Yellow System</SelectItem>
+                  {systemColorOptions.map((color) => (
+                    <SelectItem key={color} value={color}>
+                      {color} System
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -508,6 +532,7 @@ function ActionModal({
   onClose,
   canManageEquipment,
   locationOptions,
+  systemColorOptions,
   onAddLocation,
 }: { 
   equipment: Equipment | null; 
@@ -515,6 +540,7 @@ function ActionModal({
   onClose: () => void;
   canManageEquipment: boolean;
   locationOptions: string[];
+  systemColorOptions: string[];
   onAddLocation: (value: string) => void;
 }) {
   const checkout = useCheckout();
@@ -773,6 +799,7 @@ function ActionModal({
             isOpen={isEditing}
             onClose={() => setIsEditing(false)}
             locationOptions={locationOptions}
+            systemColorOptions={systemColorOptions}
             onAddLocation={onAddLocation}
           />
         )}
@@ -803,6 +830,12 @@ function SystemCheckoutModal({
 
   // Get unique system colors
   const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
+  const colorClassMap: Record<string, string> = {
+    Blue: "bg-blue-500",
+    Red: "bg-red-500",
+    Yellow: "bg-yellow-500",
+    Green: "bg-green-500",
+  };
   
   // Get items for the selected system
   const systemItems = equipment.filter(e => e.systemColor === selectedColor);
@@ -869,7 +902,7 @@ function SystemCheckoutModal({
             <div className="space-y-4">
               <Label>Select System Color</Label>
               <div className="grid grid-cols-2 gap-3">
-                {['Blue', 'Red', 'Yellow', 'Green'].map(color => {
+                {systemColors.map(color => {
                     // Check if we have items for this color
                     const hasItems = systemColors.includes(color);
                     return (
@@ -883,12 +916,7 @@ function SystemCheckoutModal({
                             onClick={() => hasItems && handleColorSelect(color)}
                             disabled={!hasItems}
                         >
-                            <div className={cn("absolute inset-y-0 left-0 w-2", {
-                                'bg-blue-500': color === 'Blue',
-                                'bg-red-500': color === 'Red',
-                                'bg-yellow-500': color === 'Yellow',
-                                'bg-green-500': color === 'Green',
-                            })} />
+                            <div className={cn("absolute inset-y-0 left-0 w-2", colorClassMap[color] ?? "bg-foreground/20")} />
                             {color} System
                         </Button>
                     );
@@ -1213,11 +1241,13 @@ function AddEquipmentModal({
   isOpen, 
   onClose,
   locationOptions,
+  systemColorOptions,
   onAddLocation,
 }: { 
   isOpen: boolean; 
   onClose: () => void;
   locationOptions: string[];
+  systemColorOptions: string[];
   onAddLocation: (value: string) => void;
 }) {
   const createEquipment = useCreateEquipment();
@@ -1309,7 +1339,7 @@ function AddEquipmentModal({
 
              <div className="space-y-2">
               <Label>System Color (Optional)</Label>
-              <Select 
+             <Select 
                 value={formData.systemColor} 
                 onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
               >
@@ -1317,10 +1347,11 @@ function AddEquipmentModal({
                       <SelectValue placeholder="Select a system color..." />
                   </SelectTrigger>
                   <SelectContent>
-                      <SelectItem value="Blue">Blue System</SelectItem>
-                      <SelectItem value="Red">Red System</SelectItem>
-                      <SelectItem value="Green">Green System</SelectItem>
-                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                      {systemColorOptions.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          {color} System
+                        </SelectItem>
+                      ))}
                   </SelectContent>
               </Select>
             </div>
@@ -1384,11 +1415,13 @@ function AdminBarcodeScannerModal({
   isOpen, 
   onClose,
   locationOptions,
+  systemColorOptions,
   onAddLocation,
 }: { 
   isOpen: boolean; 
   onClose: () => void;
   locationOptions: string[];
+  systemColorOptions: string[];
   onAddLocation: (value: string) => void;
 }) {
   const createEquipment = useCreateEquipment();
@@ -1615,10 +1648,11 @@ function AdminBarcodeScannerModal({
                       <SelectValue placeholder="Select a system color..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Blue">Blue System</SelectItem>
-                      <SelectItem value="Red">Red System</SelectItem>
-                      <SelectItem value="Green">Green System</SelectItem>
-                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                      {systemColorOptions.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          {color} System
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2003,8 +2037,8 @@ function AdminImportModal({
           </div>
 
           <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Upload a CSV file with columns: id, name, category, systemColor (optional).</p>
-            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor</p>
+            <p>Upload a CSV file with columns: id, name, category, systemColor (optional), location (optional).</p>
+            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor,location</p>
           </div>
 
           <div className="space-y-3">
@@ -2038,10 +2072,134 @@ function AdminImportModal({
   );
 }
 
+function BulkEditModal({
+  isOpen,
+  onClose,
+  locationOptions,
+  systemColorOptions,
+  onApply,
+  onDelete,
+  selectedCount,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  locationOptions: string[];
+  systemColorOptions: string[];
+  onApply: (changes: { location?: string; systemColor?: string; status?: string }) => void;
+  onDelete: () => void;
+  selectedCount: number;
+}) {
+  const [location, setLocation] = useState("");
+  const [systemColor, setSystemColor] = useState("");
+  const [status, setStatus] = useState("");
+
+  if (!isOpen) return null;
+
+  const handleApply = () => {
+    onApply({
+      location: location || undefined,
+      systemColor: systemColor || undefined,
+      status: status || undefined,
+    });
+    setLocation("");
+    setSystemColor("");
+    setStatus("");
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.98, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Bulk Edit</h2>
+              <p className="text-xs text-muted-foreground">{selectedCount} selected</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Select value={location} onValueChange={setLocation}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Leave unchanged" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locationOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>System Color</Label>
+              <Select value={systemColor} onValueChange={setSystemColor}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Leave unchanged" />
+                </SelectTrigger>
+                <SelectContent>
+                  {systemColorOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Leave unchanged" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="available">Available</SelectItem>
+                  <SelectItem value="checked_out">Checked Out</SelectItem>
+                  <SelectItem value="broken">Broken</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={handleApply}>
+                Apply Changes
+              </Button>
+            </div>
+
+            <div className="pt-2 border-t border-border">
+              <Button variant="destructive" className="w-full" onClick={onDelete}>
+                Delete Selected
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
   const adminEnabled = mode === "admin";
   const updateEquipment = useUpdateEquipment();
+  const queryClient = useQueryClient();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -2058,6 +2216,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     broken: false,
     repairs: false,
   });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2083,6 +2244,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       ...equipment.map((item) => item.location || "Shop"),
       ...customLocations,
     ])
+  );
+  const systemColorOptions = Array.from(
+    new Set(
+      equipment
+        .map((item) => item.systemColor)
+        .filter((color): color is string => !!color && color.trim().length > 0)
+    )
   );
 
   const checkedOutGroups = Object.values(
@@ -2162,6 +2330,22 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     equipment.filter((item) => getLocation(item) === "Repairs")
   );
 
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredEquipment = equipment.filter((item) => {
+    if (!normalizedSearch) return true;
+    return [
+      item.id,
+      item.name,
+      item.category,
+      item.systemColor ?? "",
+      item.location ?? "",
+      item.status,
+    ]
+      .join(" ")
+      .toLowerCase()
+      .includes(normalizedSearch);
+  });
+
   useEffect(() => {
     try {
       localStorage.setItem(brandingStorageKey, JSON.stringify(brandingState));
@@ -2186,6 +2370,57 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   const togglePanel = (key: keyof typeof expandedPanels) => {
     setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllFiltered = (ids: string[]) => {
+    setSelectedIds(ids);
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const handleBulkApply = async (changes: { location?: string; systemColor?: string; status?: string }) => {
+    if (!selectedIds.length) return;
+    const payload = Object.fromEntries(
+      Object.entries(changes).filter(([, value]) => value !== undefined && value !== "")
+    );
+    if (Object.keys(payload).length === 0) {
+      toast.error("Choose at least one field to update.");
+      return;
+    }
+    try {
+      await Promise.all(
+        selectedIds.map((id) =>
+          api.equipment.update(id, payload)
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`Updated ${selectedIds.length} item(s).`);
+      clearSelection();
+    } catch {
+      toast.error("Bulk update failed.");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.length) return;
+    const confirmed = window.confirm(`Delete ${selectedIds.length} item(s)? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      await Promise.all(selectedIds.map((id) => api.equipment.delete(id)));
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`Deleted ${selectedIds.length} item(s).`);
+      clearSelection();
+    } catch {
+      toast.error("Bulk delete failed.");
+    }
   };
 
   const handleSendToRepairs = (item: Equipment) => {
@@ -2244,6 +2479,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       <div className="text-muted-foreground">Loading...</div>
     </div>;
   }
+
+  useEffect(() => {
+    if (isBulkEditOpen && selectedIds.length === 0) {
+      setIsBulkEditOpen(false);
+    }
+  }, [isBulkEditOpen, selectedIds.length]);
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-20">
@@ -2344,6 +2585,45 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
         {canManageEquipment && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex-1">
+                <Input
+                  placeholder="Search equipment..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => selectAllFiltered(filteredEquipment.map((item) => item.id))}
+                  disabled={filteredEquipment.length === 0}
+                >
+                  Select All
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearSelection}
+                  disabled={selectedIds.length === 0}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setIsBulkEditOpen(true)}
+                  disabled={selectedIds.length === 0}
+                >
+                  Bulk Edit ({selectedIds.length})
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {canManageEquipment && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold tracking-tight">Checked Out</h2>
               <span className="text-xs text-muted-foreground uppercase tracking-wider">Live</span>
@@ -2414,6 +2694,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       {group.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
                           <span className="font-mono">{item.id}</span>
+                          <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
                           <span className="text-muted-foreground">
                             {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "—"}
                           </span>
@@ -2456,6 +2737,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       {group.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
                           <span className="font-mono">{item.id}</span>
+                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
                           <Button
                             variant="outline"
                             size="sm"
@@ -2503,6 +2785,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       {group.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
                           <span className="font-mono">{item.id}</span>
+                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
                           <Button
                             variant="outline"
                             size="sm"
@@ -2557,11 +2840,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
             
             <div className="grid gap-3">
-                {equipment.map(item => (
+                {(canManageEquipment ? filteredEquipment : equipment).map(item => (
                     <EquipmentListItem 
                         key={item.id} 
                         item={item} 
                         onClick={() => setSelectedEquipmentId(item.id)} 
+                        selectable={canManageEquipment}
+                        selected={selectedIds.includes(item.id)}
+                        onToggleSelect={toggleSelect}
                     />
                 ))}
             </div>
@@ -2585,6 +2871,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)}
             locationOptions={locationOptions}
+            systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}
           />
         )}
@@ -2593,6 +2880,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             isOpen={isBarcodeScannerOpen}
             onClose={() => setIsBarcodeScannerOpen(false)}
             locationOptions={locationOptions}
+            systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}
           />
         )}
@@ -2623,6 +2911,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             onClose={() => setIsSystemCheckInOpen(false)}
           />
         )}
+        {isBulkEditOpen && (
+          <BulkEditModal
+            isOpen={isBulkEditOpen}
+            onClose={() => setIsBulkEditOpen(false)}
+            locationOptions={locationOptions}
+            systemColorOptions={systemColorOptions}
+            selectedCount={selectedIds.length}
+            onApply={handleBulkApply}
+            onDelete={handleBulkDelete}
+          />
+        )}
         {selectedEquipmentId && (
             <ActionModal 
                 equipment={selectedEquipment || null} 
@@ -2630,6 +2929,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 onClose={() => setSelectedEquipmentId(null)}
                 canManageEquipment={canManageEquipment}
                 locationOptions={locationOptions}
+                systemColorOptions={systemColorOptions}
                 onAddLocation={handleAddLocation}
             />
         )}
