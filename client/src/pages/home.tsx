@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { Equipment } from "@shared/schema";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import type { Equipment, InsertEquipment } from "@shared/schema";
 import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,15 +25,20 @@ import {
   RefreshCw,
   Box,
   ClipboardCheck,
+  Download,
   ScanBarcode,
   Settings,
+  Upload,
   Check
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { api } from "@/lib/api";
+import type { IScannerControls } from "@zxing/browser";
 
 // --- Components ---
 
@@ -115,12 +120,138 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => 
 
 function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClose: () => void }) {
   const [manualId, setManualId] = useState("");
-  const { data: equipment = [] } = useEquipment();
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const zxingControlsRef = useRef<IScannerControls | null>(null);
 
-  const handleSimulatedScan = () => {
-    // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : '');
-    if (targetId) onScan(targetId);
+  const stopScanner = () => {
+    zxingControlsRef.current?.stop();
+    zxingControlsRef.current = null;
+    if (animationFrameRef.current !== null) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setIsScanning(false);
+  };
+
+  useEffect(() => {
+    return () => stopScanner();
+  }, []);
+
+  const parseScanValue = (value: string) => {
+    try {
+      const parsed = JSON.parse(value) as { id?: string };
+      if (parsed?.id) {
+        return parsed.id;
+      }
+    } catch {
+      // Not JSON, fall back to raw string
+    }
+    return value;
+  };
+
+  const startScanner = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanError("Camera access isn't available in this browser. Use manual entry below.");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setScanError("Camera access requires HTTPS or localhost. Use a secure URL or manual entry.");
+      return;
+    }
+    if (!videoRef.current) {
+      setScanError("Camera preview isn't ready. Please try again.");
+      return;
+    }
+
+    stopScanner();
+    setIsStarting(true);
+    setScanError(null);
+
+    try {
+      try {
+        const { BrowserMultiFormatReader, NotFoundException } = await import("@zxing/browser");
+        const codeReader = new BrowserMultiFormatReader();
+        const controls = await codeReader.decodeFromVideoDevice(
+          undefined,
+          videoRef.current,
+          (result, error) => {
+            if (result) {
+              stopScanner();
+              onScan(parseScanValue(result.getText()));
+              return;
+            }
+            if (error && !(error instanceof NotFoundException)) {
+              setScanError("Unable to read a QR code. Try better lighting or manual entry.");
+            }
+          }
+        );
+        zxingControlsRef.current = controls;
+        setIsScanning(true);
+        return;
+      } catch {
+        // Fall back to BarcodeDetector if ZXing isn't available.
+      }
+
+      if (!("BarcodeDetector" in window)) {
+        setScanError("QR scanning isn't supported in this browser. Use manual entry below.");
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      setIsScanning(true);
+
+      const scanFrame = async () => {
+        if (!videoRef.current) return;
+
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          const result = barcodes[0]?.rawValue?.trim();
+          if (result) {
+            stopScanner();
+            onScan(parseScanValue(result));
+            return;
+          }
+        } catch {
+          setScanError("Unable to read a QR code. Try better lighting or manual entry.");
+        }
+
+        animationFrameRef.current = requestAnimationFrame(scanFrame);
+      };
+
+      animationFrameRef.current = requestAnimationFrame(scanFrame);
+    } catch {
+      setScanError("Camera access was blocked. Enable permissions or use manual entry.");
+      stopScanner();
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleManualScan = () => {
+    const targetId = manualId.trim();
+    if (!targetId) {
+      setScanError("Enter an equipment ID before identifying.");
+      return;
+    }
+    onScan(targetId);
   };
 
   return (
@@ -134,20 +265,33 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
           <CardDescription>Align the QR code within the frame</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center" onClick={handleSimulatedScan}>
-            <div className="absolute inset-0 border-[40px] border-black/50 z-10"></div>
-            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative">
+          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center">
+            <video
+              ref={videoRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              muted
+              playsInline
+            />
+            <div className="absolute inset-0 border-[40px] border-black/50 z-10 pointer-events-none"></div>
+            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative pointer-events-none">
                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
             </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
-                <span className="text-muted-foreground text-xs animate-bounce">Tap to simulate scan</span>
+            <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
+              <span className="text-muted-foreground text-xs text-center px-4">
+                {scanError ? scanError : (isScanning ? "Point the camera at a QR code to scan." : "Camera is off. Tap start below.")}
+              </span>
             </div>
           </div>
           
           <div className="space-y-4">
+            <div className="flex justify-center">
+              <Button onClick={startScanner} disabled={isStarting || isScanning}>
+                {isStarting ? "Starting camera..." : (isScanning ? "Camera active" : "Start camera")}
+              </Button>
+            </div>
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t border-border" />
@@ -164,7 +308,7 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
                 onChange={(e) => setManualId(e.target.value)}
                 className="font-mono uppercase"
               />
-              <Button onClick={handleSimulatedScan}>
+              <Button onClick={handleManualScan}>
                 Identify
               </Button>
             </div>
@@ -200,6 +344,14 @@ function ActionModal({
 
   if (!isOpen || !equipment) return null;
 
+  const qrPayload = JSON.stringify({
+    id: equipment.id,
+    name: equipment.name,
+    category: equipment.category,
+    systemColor: equipment.systemColor
+  });
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrPayload)}`;
+
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
 
@@ -215,6 +367,15 @@ function ActionModal({
     setNotes("");
     setIsBroken(false);
     setStep('details');
+  };
+
+  const handleCopyQr = async () => {
+    try {
+      await navigator.clipboard.writeText(qrPayload);
+      toast.success("QR payload copied to clipboard.");
+    } catch {
+      toast.error("Failed to copy QR payload.");
+    }
   };
 
   return (
@@ -274,6 +435,21 @@ function ActionModal({
                         <p className="text-sm italic text-foreground/80">"{equipment.notes}"</p>
                     </div>
                 )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => window.open(qrUrl, "_blank", "noopener,noreferrer")}
+                    >
+                        <QrCode className="w-4 h-4 mr-2" />
+                        Open QR Code
+                    </Button>
+                    <Button variant="outline" className="w-full" onClick={handleCopyQr}>
+                        <Download className="w-4 h-4 mr-2" />
+                        Copy QR Data
+                    </Button>
+                </div>
 
                 <div className="pt-4 border-t border-border">
                     {/* Action Form */}
@@ -910,8 +1086,57 @@ function AdminBarcodeScannerModal({
 
   if (!isOpen) return null;
 
+  const tryParseQrPayload = (payload: string) => {
+    try {
+      return JSON.parse(payload) as {
+        id?: string;
+        name?: string;
+        category?: string;
+        systemColor?: string;
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const handleScan = (barcode: string) => {
+    const parsed = tryParseQrPayload(barcode);
+    if (parsed?.id && parsed?.name && parsed?.category) {
+      createEquipment.mutate({
+        id: parsed.id,
+        name: parsed.name,
+        category: parsed.category,
+        systemColor: parsed.systemColor || undefined,
+        status: 'available'
+      }, {
+        onSuccess: () => {
+          toast.success(`Equipment ${parsed.id} added successfully`);
+          setAddedItems(prev => [...prev, parsed.id]);
+          setScannedId("");
+          setFormData({ name: '', category: '', systemColor: '' });
+          setManualBarcode("");
+          setStep('scan');
+        },
+        onError: (error) => {
+          toast.error(`Failed to add equipment: ${error.message}`);
+        }
+      });
+      return;
+    }
+
+    if (parsed?.id) {
+      setScannedId(parsed.id);
+      setFormData({
+        name: parsed.name || '',
+        category: parsed.category || '',
+        systemColor: parsed.systemColor || ''
+      });
+      setStep('details');
+      return;
+    }
+
     setScannedId(barcode);
+    setFormData({ name: '', category: '', systemColor: '' });
     setStep('details');
   };
 
@@ -1105,6 +1330,204 @@ function AdminBarcodeScannerModal({
   );
 }
 
+function AdminImportModal({
+  isOpen,
+  onClose
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [rows, setRows] = useState<InsertEquipment[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
+
+  if (!isOpen) return null;
+
+  const resetState = () => {
+    setRows([]);
+    setFileName("");
+    setErrors([]);
+    setIsImporting(false);
+  };
+
+  const parseCsvRow = (row: string) => {
+    const values: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < row.length; i += 1) {
+      const char = row[i];
+      if (char === '"') {
+        if (inQuotes && row[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+      if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = "";
+        continue;
+      }
+      current += char;
+    }
+    values.push(current.trim());
+    return values.map((value) => value.replace(/^"|"$/g, ""));
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+
+    if (lines.length === 0) {
+      setErrors(["The file is empty."]);
+      setRows([]);
+      return;
+    }
+
+    const headerValues = parseCsvRow(lines[0]).map((value) => value.toLowerCase());
+    const headerMap = headerValues.reduce<Record<string, number>>((acc, value, index) => {
+      acc[value] = index;
+      return acc;
+    }, {});
+    const systemColorIndex =
+      headerMap.systemcolor ?? headerMap["system_color"] ?? headerMap["system color"];
+
+    const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+    const nextErrors: string[] = [];
+    const nextRows: InsertEquipment[] = [];
+
+    dataLines.forEach((line, index) => {
+      const values = parseCsvRow(line);
+      const id = hasHeader ? values[headerMap.id] : values[0];
+      const name = hasHeader ? values[headerMap.name] : values[1];
+      const category = hasHeader ? values[headerMap.category] : values[2];
+      const systemColor = hasHeader ? values[systemColorIndex ?? -1] : values[3];
+
+      if (!id || !name || !category) {
+        nextErrors.push(`Row ${index + 1}: missing required fields (id, name, category).`);
+        return;
+      }
+
+      nextRows.push({
+        id: id.trim(),
+        name: name.trim(),
+        category: category.trim(),
+        systemColor: systemColor?.trim() || undefined,
+        status: "available"
+      });
+    });
+
+    setErrors(nextErrors);
+    setRows(nextRows);
+  };
+
+  const handleImport = async () => {
+    if (!rows.length) {
+      toast.error("Add at least one valid row before importing.");
+      return;
+    }
+
+    setIsImporting(true);
+    const importErrors: string[] = [];
+    let successCount = 0;
+
+    for (const row of rows) {
+      try {
+        await api.equipment.create(row);
+        successCount += 1;
+      } catch (error) {
+        importErrors.push(`${row.id}: ${error instanceof Error ? error.message : "Failed to create"}`);
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`Imported ${successCount} item(s).`);
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    }
+    if (importErrors.length > 0) {
+      toast.error(`Failed to import ${importErrors.length} item(s).`);
+    }
+
+    setErrors(importErrors);
+    setIsImporting(false);
+  };
+
+  const handleClose = () => {
+    resetState();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500/10 flex items-center justify-center">
+                <Upload className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">CSV Import</h2>
+                <p className="text-xs text-muted-foreground">Admin - Bulk Equipment Add</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={handleClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>Upload a CSV file with columns: id, name, category, systemColor (optional).</p>
+            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor</p>
+          </div>
+
+          <div className="space-y-3">
+            <Input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
+            {fileName && (
+              <div className="text-xs text-muted-foreground">Loaded: {fileName}</div>
+            )}
+            {rows.length > 0 && (
+              <div className="text-sm text-foreground">Ready to import {rows.length} item(s).</div>
+            )}
+            {errors.length > 0 && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
+                {errors.map((error) => (
+                  <div key={error}>{error}</div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={handleClose}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleImport} disabled={isImporting}>
+              {isImporting ? "Importing..." : "Import"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { data: equipment = [], isLoading } = useEquipment();
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -1112,6 +1535,7 @@ export default function Home() {
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   
@@ -1154,6 +1578,17 @@ export default function Home() {
                     data-testid="button-barcode-scanner"
                   >
                     <ScanBarcode className="w-5 h-5" />
+                  </Button>
+                )}
+                {isAdminMode && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
+                    onClick={() => setIsImportModalOpen(true)}
+                    data-testid="button-csv-import"
+                  >
+                    <Upload className="w-5 h-5" />
                   </Button>
                 )}
                 <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
@@ -1258,6 +1693,12 @@ export default function Home() {
           <AdminBarcodeScannerModal
             isOpen={isBarcodeScannerOpen}
             onClose={() => setIsBarcodeScannerOpen(false)}
+          />
+        )}
+        {isImportModalOpen && (
+          <AdminImportModal
+            isOpen={isImportModalOpen}
+            onClose={() => setIsImportModalOpen(false)}
           />
         )}
         {isSystemCheckoutOpen && (
