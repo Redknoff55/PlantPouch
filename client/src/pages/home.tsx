@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { Equipment, InsertEquipment } from "@shared/schema";
-import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
+import {
+  useEquipment,
+  useCreateEquipment,
+  useCheckoutSystem,
+  useCheckinByWorkOrder,
+  useCheckout,
+  useCheckin,
+  useUpdateEquipment,
+  useDeleteEquipment,
+} from "@/lib/hooks";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,15 +22,10 @@ import {
   QrCode, 
   Search, 
   AlertTriangle, 
-  CheckCircle2, 
-  Clock, 
   Wrench, 
-  ArrowRightLeft,
   History,
   X,
   Plus,
-  ArrowRight,
-  AlertCircle,
   RefreshCw,
   Box,
   ClipboardCheck,
@@ -64,10 +68,22 @@ function StatusBadge({ status }: { status: string }) {
 
 function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => void }) {
   const isBroken = item.status === 'broken';
-function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () =>
-                 <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
-                    {item.systemColor} Sys
-                 </Badge>
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group cursor-pointer p-4 rounded-lg border border-border/50 bg-card hover:border-primary/30 hover:shadow-md transition-all"
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <Box className="w-4 h-4 text-muted-foreground shrink-0" />
+            {item.systemColor && (
+              <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
+                {item.systemColor} Sys
+              </Badge>
             )}
           </div>
           <h3 className={cn("font-semibold text-lg transition-colors", isBroken ? "text-destructive" : "text-foreground group-hover:text-primary")}>
@@ -98,6 +114,11 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const zxingControlsRef = useRef<IScannerControls | null>(null);
+  const barcodeDetectorCtor = (window as Window & {
+    BarcodeDetector?: new (options: { formats: string[] }) => {
+      detect: (video: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
+    };
+  }).BarcodeDetector;
 
   const stopScanner = () => {
     zxingControlsRef.current?.stop();
@@ -113,8 +134,10 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
 
   const handleSimulatedScan = () => {
     // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : '');
+    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : "");
     if (targetId) onScan(targetId);
+  };
+
   useEffect(() => {
     return () => stopScanner();
   }, []);
@@ -151,21 +174,21 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
 
     try {
       try {
-        const { BrowserMultiFormatReader, NotFoundException } = await import("@zxing/browser");
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
         const codeReader = new BrowserMultiFormatReader();
         const controls = await codeReader.decodeFromVideoDevice(
           undefined,
           videoRef.current,
-          (result, error) => {
+          (result: { getText: () => string } | undefined, error: unknown) => {
             if (result) {
               stopScanner();
               onScan(parseScanValue(result.getText()));
               return;
             }
-            if (error && !(error instanceof NotFoundException)) {
+            if (error instanceof Error && error.name !== "NotFoundException") {
               setScanError("Unable to read a QR code. Try better lighting or manual entry.");
             }
-          }
+          },
         );
         zxingControlsRef.current = controls;
         setIsScanning(true);
@@ -174,7 +197,7 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
         // Fall back to BarcodeDetector if ZXing isn't available.
       }
 
-      if (!("BarcodeDetector" in window)) {
+      if (!barcodeDetectorCtor) {
         setScanError("QR scanning isn't supported in this browser. Use manual entry below.");
         return;
       }
@@ -190,7 +213,7 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
         await videoRef.current.play();
       }
 
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      const detector = new barcodeDetectorCtor({ formats: ["qr_code"] });
       setIsScanning(true);
 
       const scanFrame = async () => {
@@ -240,10 +263,10 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
           <CardDescription>Align the QR code within the frame</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center" onClick={handleSimulatedScan}>
-            <div className="absolute inset-0 border-[40px] border-black/50 z-10"></div>
-            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative">
-          <div className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center">
+          <div
+            className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center"
+            onClick={handleSimulatedScan}
+          >
             <video
               ref={videoRef}
               className="absolute inset-0 h-full w-full object-cover"
@@ -252,20 +275,18 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
             />
             <div className="absolute inset-0 border-[40px] border-black/50 z-10 pointer-events-none"></div>
             <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative pointer-events-none">
-               <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
-               <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
-               <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
-               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
+              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
+              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
             </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-50 pointer-events-none">
-                <span className="text-muted-foreground text-xs animate-bounce">Tap to simulate scan</span>
             <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
               <span className="text-muted-foreground text-xs text-center px-4">
                 {scanError ? scanError : (isScanning ? "Point the camera at a QR code to scan." : "Camera is off. Tap start below.")}
               </span>
             </div>
           </div>
-          
+
           <div className="space-y-4">
             <div className="flex justify-center">
               <Button onClick={startScanner} disabled={isStarting || isScanning}>
@@ -280,15 +301,14 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
                 <span className="bg-card px-2 text-muted-foreground">Or enter manually</span>
               </div>
             </div>
-            
+
             <div className="flex gap-2">
-              <Input 
-                placeholder="Enter Equipment ID (e.g. EQ-001)" 
+              <Input
+                placeholder="Enter Equipment ID (e.g. EQ-001)"
                 value={manualId}
                 onChange={(e) => setManualId(e.target.value)}
                 className="font-mono uppercase"
               />
-              <Button onClick={handleSimulatedScan}>
               <Button onClick={handleManualScan}>
                 Identify
               </Button>
@@ -299,6 +319,133 @@ function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClos
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function EditEquipmentModal({
+  equipment,
+  isOpen,
+  onClose,
+}: {
+  equipment: Equipment;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const updateEquipment = useUpdateEquipment();
+  const [formData, setFormData] = useState({
+    name: equipment.name,
+    category: equipment.category,
+    systemColor: equipment.systemColor ?? "",
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormData({
+      name: equipment.name,
+      category: equipment.category,
+      systemColor: equipment.systemColor ?? "",
+    });
+  }, [equipment, isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = () => {
+    if (!formData.name || !formData.category) {
+      toast.error("Name and category are required.");
+      return;
+    }
+    updateEquipment.mutate(
+      {
+        id: equipment.id,
+        data: {
+          name: formData.name,
+          category: formData.category,
+          systemColor: formData.systemColor || undefined,
+        },
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Updated ${equipment.id}.`);
+          onClose();
+        },
+        onError: (error) => {
+          toast.error(`Failed to update equipment: ${error.message}`);
+        },
+      },
+    );
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Edit Equipment</h2>
+              <p className="text-xs text-muted-foreground font-mono">{equipment.id}</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Equipment Name *</Label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category *</Label>
+              <Input
+                value={formData.category}
+                onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>System Color (Optional)</Label>
+              <Select
+                value={formData.systemColor}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, systemColor: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a system color..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Blue">Blue System</SelectItem>
+                  <SelectItem value="Red">Red System</SelectItem>
+                  <SelectItem value="Green">Green System</SelectItem>
+                  <SelectItem value="Yellow">Yellow System</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-[2] h-12 text-lg font-semibold"
+                onClick={handleSubmit}
+                disabled={!formData.name || !formData.category || updateEquipment.isPending}
+              >
+                {updateEquipment.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -314,7 +461,8 @@ function ActionModal({
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
-  const [step, setStep] = useState<'details' | 'process'>('details');
+  const deleteEquipment = useDeleteEquipment();
+  const [isEditing, setIsEditing] = useState(false);
   
   // Checkout State
   const [workOrder, setWorkOrder] = useState("");
@@ -329,10 +477,9 @@ function ActionModal({
     id: equipment.id,
     name: equipment.name,
     category: equipment.category,
-    systemColor: equipment.systemColor
+    systemColor: equipment.systemColor,
   });
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrPayload)}`;
-
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
 
@@ -347,7 +494,6 @@ function ActionModal({
     setWorkOrder("");
     setNotes("");
     setIsBroken(false);
-    setStep('details');
   };
 
   const handleCopyQr = async () => {
@@ -357,6 +503,20 @@ function ActionModal({
     } catch {
       toast.error("Failed to copy QR payload.");
     }
+  };
+
+  const handleDelete = () => {
+    const confirmed = window.confirm(`Delete ${equipment.id}? This cannot be undone.`);
+    if (!confirmed) return;
+    deleteEquipment.mutate(equipment.id, {
+      onSuccess: () => {
+        toast.success(`Deleted ${equipment.id}.`);
+        onClose();
+      },
+      onError: (error) => {
+        toast.error(`Failed to delete equipment: ${error.message}`);
+      },
+    });
   };
 
   return (
@@ -384,7 +544,14 @@ function ActionModal({
                     <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
                         <span className="text-muted-foreground block text-xs mb-1">Status</span>
                         <StatusBadge status={equipment.status} />
-function ActionModal({
+                    </div>
+                    <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
+                        <span className="text-muted-foreground block text-xs mb-1">Category</span>
+                        <span className="font-medium">{equipment.category}</span>
+                    </div>
+                </div>
+                
+                {equipment.status === 'checked_out' && (
                     <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/10 space-y-2">
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Work Order</span>
@@ -425,6 +592,24 @@ function ActionModal({
                     </Button>
                 </div>
 
+                <div className="grid gap-2 sm:grid-cols-2">
+                    <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setIsEditing(true)}
+                    >
+                        Edit Equipment
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        className="w-full"
+                        onClick={handleDelete}
+                        disabled={deleteEquipment.isPending}
+                    >
+                        {deleteEquipment.isPending ? "Deleting..." : "Delete Equipment"}
+                    </Button>
+                </div>
+
                 <div className="pt-4 border-t border-border">
                     {/* Action Form */}
                     {isBrokenState ? (
@@ -450,54 +635,601 @@ function ActionModal({
                                 <Input 
                                     placeholder="Enter WO-XXXX" 
                                     className="font-mono"
+                                    value={workOrder}
+                                    onChange={(e) => setWorkOrder(e.target.value)}
+                                    autoFocus
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label>Notes</Label>
-                                <Textarea placeholder="Enter any notes about this checkout" />
-                            </div>
-                            <Button className="w-full" onClick={() => {
-                                checkout.mutate({ id: equipment.id, workOrder: "WO-XXXX", notes: "Checked out for maintenance" });
-                                onClose();
-                            }}>
-                                Check Out
+                            <Button 
+                                className="w-full h-12 text-lg font-semibold" 
+                                size="lg"
+                                onClick={handleSubmit}
+                                disabled={!workOrder}
+                            >
+                                Check Out Equipment
                             </Button>
                         </div>
                     ) : (
                         <div className="space-y-4">
                             <div className="space-y-2">
-                                <Label>Work Order #</Label>
-                                <Input 
-                                    placeholder="Enter WO-XXXX" 
-                                    className="font-mono"
+                                <Label>Inspection Notes</Label>
+                                <Textarea 
+                                    placeholder="Any issues or observations?" 
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <Label>Notes</Label>
-                                <Textarea placeholder="Enter any notes about this checkin" />
+                            <div className={cn(
+                                "flex items-center justify-between p-4 rounded-lg border transition-colors",
+                                isBroken ? "border-destructive/50 bg-destructive/10" : "border-border bg-muted/30"
+                            )}>
+                                <div className="space-y-0.5">
+                                    <Label className={cn("text-base", isBroken && "text-destructive")}>Report Issue</Label>
+                                    <p className="text-xs text-muted-foreground">Flag this equipment as broken/damaged</p>
+                                </div>
+                                <Switch 
+                                    checked={isBroken}
+                                    onCheckedChange={setIsBroken}
+                                    className="data-[state=checked]:bg-destructive"
+                                />
                             </div>
-                            <Button className="w-full" onClick={() => {
-                                checkin.mutate({ id: equipment.id, workOrder: "WO-XXXX", notes: "Returned after maintenance" });
-                                onClose();
-                            }}>
-                                Check In
+                            <Button 
+                                className={cn("w-full h-12 text-lg font-semibold", isBroken ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "")}
+                                size="lg"
+                                onClick={handleSubmit}
+                            >
+                                {isBroken ? "Report Broken & Check In" : "Complete Check In"}
                             </Button>
                         </div>
                     )}
                 </div>
-            </DialogContent>
-        </Dialog>
+            </div>
+        </motion.div>
 
-        {/* Add Equipment Modal */}
-        {isAddingEquipment && (
-            <AddEquipmentModal isOpen={isAddingEquipment} onClose={() => setIsAddingEquipment(false)} />
+        {isEditing && (
+          <EditEquipmentModal
+            equipment={equipment}
+            isOpen={isEditing}
+            onClose={() => setIsEditing(false)}
+          />
         )}
+    </div>
+  );
+}
 
-        {/* Admin Barcode Scanner Modal */}
-        {isAdminBarcodeScannerOpen && (
-            <AdminBarcodeScannerModal isOpen={isAdminBarcodeScannerOpen} onClose={() => setIsAdminBarcodeScannerOpen(false)} />
-        )}
-    </>
+function SystemCheckoutModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { data: equipment = [] } = useEquipment();
+  const checkoutSystem = useCheckoutSystem();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [workOrder, setWorkOrder] = useState("");
+  
+  // Track which items are selected/verified for checkout
+  // Key: Original Item ID, Value: The ID of the item to actually checkout (could be the same, or a replacement)
+  const [verifiedItems, setVerifiedItems] = useState<Record<string, string>>({});
+  const [issues, setIssues] = useState<Record<string, string>>({});
+
+  // Get unique system colors
+  const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
+  
+  // Get items for the selected system
+  const systemItems = equipment.filter(e => e.systemColor === selectedColor);
+
+  const handleColorSelect = (color: string) => {
+    setSelectedColor(color);
+    // Initialize verified items with the default system items
+    const initialVerified: Record<string, string> = {};
+    equipment.filter(e => e.systemColor === color).forEach(e => {
+      initialVerified[e.id] = e.id;
+    });
+    setVerifiedItems(initialVerified);
+    setStep(2);
+  };
+
+  const handleSwap = (originalId: string, newItemId: string) => {
+    setVerifiedItems(prev => ({
+      ...prev,
+      [originalId]: newItemId
+    }));
+  };
+
+  const handleSubmit = () => {
+    if (!workOrder) return;
+    
+    // Collect all final IDs to checkout
+    const finalIds = Object.values(verifiedItems);
+    
+    checkoutSystem.mutate({ systemColor: selectedColor, equipmentIds: finalIds, workOrder, techName: "Tech #01" });
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <Box className="w-5 h-5 text-primary" />
+              System Checkout
+            </h2>
+            <p className="text-sm text-muted-foreground">Check out a complete equipment system</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {step === 1 ? (
+            <div className="space-y-4">
+              <Label>Select System Color</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {['Blue', 'Red', 'Yellow', 'Green'].map(color => {
+                    // Check if we have items for this color
+                    const hasItems = systemColors.includes(color);
+                    return (
+                        <Button
+                            key={color}
+                            variant="outline"
+                            className={cn(
+                                "h-20 text-lg font-semibold border-2 relative overflow-hidden",
+                                hasItems ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
+                            )}
+                            onClick={() => hasItems && handleColorSelect(color)}
+                            disabled={!hasItems}
+                        >
+                            <div className={cn("absolute inset-y-0 left-0 w-2", {
+                                'bg-blue-500': color === 'Blue',
+                                'bg-red-500': color === 'Red',
+                                'bg-yellow-500': color === 'Yellow',
+                                'bg-green-500': color === 'Green',
+                            })} />
+                            {color} System
+                        </Button>
+                    );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                  <div>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">System</span>
+                    <div className="font-bold text-lg text-primary">{selectedColor}</div>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={() => setStep(1)}>Change</Button>
+               </div>
+
+               <div className="space-y-4">
+                 <Label>System Verification Checklist</Label>
+                 <div className="space-y-3">
+                    {systemItems.map(item => {
+                        const currentSelectedId = verifiedItems[item.id];
+                        const isOriginal = currentSelectedId === item.id;
+                        const selectedItem = equipment.find(e => e.id === currentSelectedId);
+                        
+                        // Find potential replacements (same category, available, not already in this system)
+                        const replacements = equipment.filter(e => 
+                            e.category === item.category && 
+                            e.status === 'available' && 
+                            e.id !== item.id
+                        );
+
+                        return (
+                            <div key={item.id} className="p-4 rounded-lg border border-border bg-card space-y-3">
+                                <div className="flex items-start gap-3">
+                                    <Checkbox 
+                                        checked={true} // Always checked as we are verifying the slot
+                                        className="mt-1"
+                                    />
+                                    <div className="flex-1">
+                                        <div className="flex justify-between">
+                                            <span className="font-medium">{item.category}</span>
+                                            <Badge variant={isOriginal ? "outline" : "secondary"} className="font-mono text-[10px]">
+                                                {isOriginal ? 'ORIGINAL' : 'REPLACEMENT'}
+                                            </Badge>
+                                        </div>
+                                        
+                                        {isOriginal ? (
+                                            <div className="text-sm text-muted-foreground">{item.name} <span className="font-mono text-xs opacity-70">({item.id})</span></div>
+                                        ) : (
+                                            <div className="text-sm text-primary font-medium flex items-center gap-1">
+                                                <RefreshCw className="w-3 h-3" />
+                                                Swapped: {selectedItem?.name} ({selectedItem?.id})
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Actions Row */}
+                                <div className="pl-7 flex flex-wrap gap-2 items-center">
+                                    {/* Swap Dropdown */}
+                                    <Select 
+                                        value={currentSelectedId} 
+                                        onValueChange={(val) => handleSwap(item.id, val)}
+                                    >
+                                        <SelectTrigger className="h-8 w-[200px] text-xs">
+                                            <SelectValue placeholder="Select equipment" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value={item.id}>
+                                                Original: {item.name} ({item.id})
+                                            </SelectItem>
+                                            {replacements.map(rep => (
+                                                <SelectItem key={rep.id} value={rep.id}>
+                                                    Available: {rep.name} ({rep.id})
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+
+                                    {/* Issue Reporting */}
+                                    <Input 
+                                        className="h-8 flex-1 text-xs" 
+                                        placeholder="Report issue with original..."
+                                        value={issues[item.id] || ''}
+                                        onChange={(e) => setIssues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                 </div>
+               </div>
+
+               <div className="pt-4 border-t border-border space-y-4">
+                  <div className="space-y-2">
+                    <Label>Work Order #</Label>
+                    <Input 
+                        placeholder="Enter WO-XXXX" 
+                        className="font-mono text-lg"
+                        value={workOrder}
+                        onChange={(e) => setWorkOrder(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    className="w-full h-12 text-lg font-bold" 
+                    onClick={handleSubmit}
+                    disabled={!workOrder}
+                  >
+                    Check Out System
+                  </Button>
+               </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function SystemCheckInModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const { data: equipment = [] } = useEquipment();
+  const checkinByWorkOrder = useCheckinByWorkOrder();
+  const [step, setStep] = useState<1 | 2>(1);
+  const [workOrder, setWorkOrder] = useState("");
+  const [reports, setReports] = useState<Record<string, { isBroken: boolean; notes: string }>>({});
+
+  // Derived state
+  const itemsInWO = equipment.filter(e => e.workOrder === workOrder && e.status === 'checked_out');
+
+  const handleLookup = () => {
+    if (itemsInWO.length > 0) {
+      setStep(2);
+    } else {
+      // Could show error toast here
+      alert("No active checkouts found for this Work Order.");
+    }
+  };
+
+  const handleSubmit = () => {
+    checkinByWorkOrder.mutate({ workOrder, itemReports: reports });
+    onClose();
+  };
+
+  const toggleBroken = (id: string) => {
+    setReports(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isBroken: !prev[id]?.isBroken
+      }
+    }));
+  };
+
+  const updateNotes = (id: string, notes: string) => {
+    setReports(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        isBroken: prev[id]?.isBroken || false,
+        notes
+      }
+    }));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b border-border flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <ClipboardCheck className="w-5 h-5 text-primary" />
+              System Check In
+            </h2>
+            <p className="text-sm text-muted-foreground">Return equipment and report issues</p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1">
+          {step === 1 ? (
+            <div className="space-y-6 py-8">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-8 h-8 text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-semibold">Enter Work Order Number</h3>
+                <p className="text-muted-foreground text-sm max-w-xs mx-auto">
+                    Type the work order number used during checkout to retrieve the equipment list.
+                </p>
+              </div>
+
+              <div className="max-w-xs mx-auto space-y-4">
+                <Input 
+                    placeholder="e.g. WO-2024-889" 
+                    className="font-mono text-center text-lg h-12 uppercase"
+                    value={workOrder}
+                    onChange={(e) => setWorkOrder(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
+                    autoFocus
+                />
+                <Button 
+                    className="w-full h-12 text-lg" 
+                    onClick={handleLookup}
+                    disabled={!workOrder}
+                >
+                    Find Order
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                  <div>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Work Order</span>
+                    <div className="font-bold text-lg font-mono">{workOrder}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider">Items Found</div>
+                    <div className="font-bold text-lg">{itemsInWO.length}</div>
+                  </div>
+               </div>
+
+               <div className="space-y-4">
+                 <Label>Equipment Inspection</Label>
+                 <div className="space-y-3">
+                    {itemsInWO.map(item => {
+                        const isBroken = reports[item.id]?.isBroken;
+
+                        return (
+                            <div key={item.id} className={cn(
+                                "p-4 rounded-lg border transition-all space-y-3",
+                                isBroken ? "border-destructive bg-destructive/5" : "border-border bg-card"
+                            )}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-medium">{item.name}</span>
+                                            <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                                        </div>
+                                        <div className="text-sm text-muted-foreground">{item.category}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Label htmlFor={`broken-${item.id}`} className={cn("text-xs cursor-pointer", isBroken ? "text-destructive font-bold" : "text-muted-foreground")}>
+                                            {isBroken ? "NEEDS REPAIR" : "Good Condition"}
+                                        </Label>
+                                        <Switch 
+                                            id={`broken-${item.id}`}
+                                            checked={isBroken}
+                                            onCheckedChange={() => toggleBroken(item.id)}
+                                            className="data-[state=checked]:bg-destructive"
+                                        />
+                                    </div>
+                                </div>
+
+                                {isBroken && (
+                                    <motion.div 
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        className="pt-2"
+                                    >
+                                        <Label className="text-xs text-destructive mb-1.5 block flex items-center gap-1">
+                                            <AlertTriangle className="w-3 h-3" /> Issue Description
+                                        </Label>
+                                        <Input 
+                                            className="bg-background"
+                                            placeholder="Describe the damage or issue..."
+                                            value={reports[item.id]?.notes || ''}
+                                            onChange={(e) => updateNotes(item.id, e.target.value)}
+                                        />
+                                    </motion.div>
+                                )}
+                            </div>
+                        );
+                    })}
+                 </div>
+               </div>
+
+               <div className="pt-4 border-t border-border flex gap-3">
+                  <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>
+                    Back
+                  </Button>
+                  <Button 
+                    className="flex-[2] h-12 text-lg font-bold" 
+                    onClick={handleSubmit}
+                  >
+                    Complete Check In
+                  </Button>
+               </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function AddEquipmentModal({ 
+  isOpen, 
+  onClose 
+}: { 
+  isOpen: boolean; 
+  onClose: () => void 
+}) {
+  const createEquipment = useCreateEquipment();
+  const [formData, setFormData] = useState({
+    id: '',
+    name: '',
+    category: '',
+    systemColor: '',
+    status: 'available'
+  });
+
+  if (!isOpen) return null;
+
+  const handleSubmit = () => {
+    if (!formData.id || !formData.name || !formData.category) {
+      toast.error("Please fill in all required fields");
+      return;
+    }
+    
+    createEquipment.mutate({
+      id: formData.id,
+      name: formData.name,
+      category: formData.category,
+      systemColor: formData.systemColor || undefined,
+      status: 'available'
+    }, {
+      onSuccess: () => {
+        toast.success(`Equipment ${formData.id} added successfully`);
+        setFormData({ id: '', name: '', category: '', systemColor: '', status: 'available' });
+        onClose();
+      },
+      onError: (error) => {
+        toast.error(`Failed to add equipment: ${error.message}`);
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Add New Equipment</h2>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Equipment ID (QR Code) <span className="text-destructive">*</span></Label>
+              <Input 
+                placeholder="e.g. EQ-006" 
+                className="font-mono uppercase"
+                value={formData.id}
+                onChange={(e) => setFormData(prev => ({ ...prev, id: e.target.value }))}
+                data-testid="input-add-equipment-id"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Equipment Name <span className="text-destructive">*</span></Label>
+              <Input 
+                placeholder="e.g. Fluke Thermal Imager" 
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                data-testid="input-add-equipment-name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category <span className="text-destructive">*</span></Label>
+              <Input 
+                placeholder="e.g. Measurement" 
+                value={formData.category}
+                onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                data-testid="input-add-equipment-category"
+              />
+            </div>
+
+             <div className="space-y-2">
+              <Label>System Color (Optional)</Label>
+              <Select 
+                value={formData.systemColor} 
+                onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
+              >
+                  <SelectTrigger>
+                      <SelectValue placeholder="Select a system color..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                      <SelectItem value="Blue">Blue System</SelectItem>
+                      <SelectItem value="Red">Red System</SelectItem>
+                      <SelectItem value="Green">Green System</SelectItem>
+                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                  </SelectContent>
+              </Select>
+            </div>
+
+            <Button 
+              className="w-full h-12 text-lg font-semibold mt-4" 
+              onClick={handleSubmit}
+              disabled={!formData.id || !formData.name || !formData.category}
+            >
+              Add to Inventory
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -537,16 +1269,17 @@ function AdminBarcodeScannerModal({
   const handleScan = (barcode: string) => {
     const parsed = tryParseQrPayload(barcode);
     if (parsed?.id && parsed?.name && parsed?.category) {
+      const parsedId = parsed.id;
       createEquipment.mutate({
-        id: parsed.id,
+        id: parsedId,
         name: parsed.name,
         category: parsed.category,
         systemColor: parsed.systemColor || undefined,
         status: 'available'
       }, {
         onSuccess: () => {
-          toast.success(`Equipment ${parsed.id} added successfully`);
-          setAddedItems(prev => [...prev, parsed.id]);
+          toast.success(`Equipment ${parsedId} added successfully`);
+          setAddedItems(prev => [...prev, parsedId]);
           setScannedId("");
           setFormData({ name: '', category: '', systemColor: '' });
           setManualBarcode("");
@@ -597,7 +1330,154 @@ function AdminBarcodeScannerModal({
     setManualBarcode("");
     setStep('scan');
   };
-function AdminBarcodeScannerModal({
+
+  const handleClose = () => {
+    setScannedId("");
+    setFormData({ name: '', category: '', systemColor: '' });
+    setManualBarcode("");
+    setAddedItems([]);
+    setStep('scan');
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
+      <motion.div 
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
+                <ScanBarcode className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold">Barcode Import</h2>
+                <p className="text-xs text-muted-foreground">Admin - Quick Equipment Add</p>
+              </div>
+            </div>
+            <Button variant="ghost" size="icon" onClick={handleClose} data-testid="button-close-barcode">
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {addedItems.length > 0 && (
+            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-emerald-500 text-sm font-medium mb-2">
+                <Check className="w-4 h-4" />
+                Added {addedItems.length} item(s)
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {addedItems.map(id => (
+                  <Badge key={id} variant="outline" className="text-xs font-mono">
+                    {id}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 'scan' && (
+            <div className="space-y-4">
+              <div className="relative aspect-video bg-black rounded-lg overflow-hidden border-2 border-amber-500/30 flex items-center justify-center cursor-pointer" onClick={handleSimulatedScan}>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-full h-1 bg-amber-500/50 animate-pulse" />
+                </div>
+                <div className="absolute inset-x-8 top-8 bottom-8 border-2 border-dashed border-amber-500/40 rounded flex items-center justify-center">
+                  <ScanBarcode className="w-16 h-16 text-amber-500/30" />
+                </div>
+                <div className="absolute bottom-4 text-center">
+                  <span className="text-amber-500/70 text-xs animate-pulse">Tap to simulate barcode scan</span>
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or enter barcode manually</span>
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Enter barcode value..." 
+                    value={manualBarcode}
+                    onChange={(e) => setManualBarcode(e.target.value)}
+                    className="font-mono uppercase"
+                    data-testid="input-manual-barcode"
+                  />
+                  <Button onClick={handleSimulatedScan} data-testid="button-scan-barcode">
+                    Scan
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === 'details' && (
+            <div className="space-y-4">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-center">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">Scanned Barcode</span>
+                <div className="text-2xl font-mono font-bold text-amber-500 mt-1">{scannedId}</div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Equipment Name *</Label>
+                  <Input 
+                    placeholder="e.g. Fluke 87V Multimeter" 
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    data-testid="input-equipment-name"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Category *</Label>
+                  <Input 
+                    placeholder="e.g. Measurement, Analysis, Pressure" 
+                    value={formData.category}
+                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    data-testid="input-equipment-category"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>System Color (Optional)</Label>
+                  <Select 
+                    value={formData.systemColor} 
+                    onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
+                  >
+                    <SelectTrigger data-testid="select-system-color">
+                      <SelectValue placeholder="Select a system color..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Blue">Blue System</SelectItem>
+                      <SelectItem value="Red">Red System</SelectItem>
+                      <SelectItem value="Green">Green System</SelectItem>
+                      <SelectItem value="Yellow">Yellow System</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => {
+                    setStep('scan');
+                    setScannedId("");
+                    setFormData({ name: '', category: '', systemColor: '' });
+                  }}
+                  data-testid="button-cancel-add"
                 >
                   Cancel
                 </Button>
@@ -904,7 +1784,60 @@ export default function Home() {
             </div>
             <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
                 <span className="block text-3xl font-bold font-mono text-destructive">{stats.broken}</span>
-export default function Home() {
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Broken</span>
+            </div>
+             <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
+                <span className="block text-3xl font-bold font-mono">{stats.total}</span>
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total</span>
+            </div>
+        </div>
+
+        {/* Action Button */}
+        <div className="grid grid-cols-2 gap-4">
+          <button 
+              onClick={() => setIsSystemCheckoutOpen(true)}
+              className="py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+          >
+              <Box className="w-8 h-8" />
+              SYSTEM CHECKOUT
+          </button>
+          <button 
+              onClick={() => setIsSystemCheckInOpen(true)}
+              className="py-6 rounded-xl bg-secondary text-secondary-foreground font-bold text-lg shadow-sm hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+          >
+              <ClipboardCheck className="w-8 h-8" />
+              SYSTEM CHECK IN
+          </button>
+        </div>
+        
+        <button 
+            onClick={() => setIsScannerOpen(true)}
+            className="w-full py-4 rounded-xl bg-card border border-primary/20 text-foreground font-bold text-base shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+        >
+            <QrCode className="w-5 h-5 text-primary" />
+            SINGLE QR SCAN
+        </button>
+
+        {/* Equipment List */}
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold tracking-tight">Inventory</h2>
+                <div className="flex gap-2 text-xs">
+                    <span className="px-2 py-1 rounded bg-muted text-muted-foreground font-medium">All Systems</span>
+                </div>
+            </div>
+            
+            <div className="grid gap-3">
+                {equipment.map(item => (
+                    <EquipmentListItem 
+                        key={item.id} 
+                        item={item} 
+                        onClick={() => setSelectedEquipmentId(item.id)} 
+                    />
+                ))}
+            </div>
+        </div>
+      </main>
 
       {/* Modals */}
       {isScannerOpen && (

@@ -19,6 +19,27 @@ export function useCreateEquipment() {
   });
 }
 
+export function useUpdateEquipment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<InsertEquipment> }) =>
+      api.equipment.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+export function useDeleteEquipment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.equipment.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
 export function useCheckoutSystem() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -63,27 +84,6 @@ export function useCheckin() {
   return useMutation({
     mutationFn: ({ id, ...params }: { id: string; notes: string; isBroken: boolean }) =>
       api.equipment.checkin(id, params),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['equipment'] });
-    },
-  });
-}
-
-export function useUpdateEquipment() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Partial<InsertEquipment>) =>
-      api.equipment.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['equipment'] });
-    },
-  });
-}
-
-export function useDeleteEquipment() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.equipment.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
     },
