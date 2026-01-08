@@ -2473,18 +2473,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       // Ignore localStorage errors.
     }
   };
-  
-  if (isLoading) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="text-muted-foreground">Loading...</div>
-    </div>;
-  }
 
   useEffect(() => {
     if (isBulkEditOpen && selectedIds.length === 0) {
       setIsBulkEditOpen(false);
     }
   }, [isBulkEditOpen, selectedIds.length]);
+  
+  if (isLoading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="text-muted-foreground">Loading...</div>
+    </div>;
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground pb-20">
