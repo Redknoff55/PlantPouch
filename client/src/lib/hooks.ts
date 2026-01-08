@@ -19,6 +19,27 @@ export function useCreateEquipment() {
   });
 }
 
+export function useUpdateEquipment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<InsertEquipment> }) =>
+      api.equipment.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+export function useDeleteEquipment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.equipment.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
 export function useCheckoutSystem() {
   const queryClient = useQueryClient();
   return useMutation({

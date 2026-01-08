@@ -88,6 +88,7 @@ export async function registerRoutes(
       }
 
       const checkedOutAt = new Date();
+      const systemNotes = `Checked out under WO ${workOrder} as part of ${systemColor} System by ${techName}`;
       
       // Update all equipment in the system
       const updatedEquipment = await Promise.all(
@@ -98,6 +99,7 @@ export async function registerRoutes(
             workOrder,
             checkedOutBy: techName,
             checkedOutAt,
+            notes: systemNotes,
           });
           
           // Add history entry
@@ -141,7 +143,9 @@ export async function registerRoutes(
           const report = itemReports[item.id] || { isBroken: false, notes: '' };
           const newStatus = report.isBroken ? 'broken' : 'available';
           const action = report.isBroken ? 'report_broken' : 'check_in';
-          const notes = report.notes || (report.isBroken ? 'Reported broken during system check-in' : 'Returned via system check-in');
+          const baseNotes =
+            report.notes || (report.isBroken ? 'Reported broken during system check-in' : 'Returned via system check-in');
+          const notes = `WO ${workOrder}: ${baseNotes}`;
 
           const updated = await storage.updateEquipment(item.id, {
             status: newStatus,
@@ -184,6 +188,7 @@ export async function registerRoutes(
         workOrder,
         checkedOutBy: techName,
         checkedOutAt: new Date(),
+        notes: `Checked out under WO ${workOrder} by ${techName}`,
       });
 
       if (!equipment) {
@@ -211,24 +216,29 @@ export async function registerRoutes(
       const { notes, isBroken } = req.body;
       const newStatus = isBroken ? 'broken' : 'available';
       const action = isBroken ? 'report_broken' : 'check_in';
+      const existing = await storage.getEquipment(req.params.id);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+      const workOrder = existing.workOrder;
+      const notesPrefix = workOrder ? `WO ${workOrder}: ` : "";
+      const combinedNotes =
+        notes ? `${notesPrefix}${notes}` : `${notesPrefix}${isBroken ? "Reported broken" : "Returned"}`;
 
       const equipment = await storage.updateEquipment(req.params.id, {
         status: newStatus,
         workOrder: undefined,
         checkedOutBy: undefined,
         checkedOutAt: undefined,
-        notes: notes || undefined,
+        notes: combinedNotes || undefined,
       });
-
-      if (!equipment) {
-        return res.status(404).json({ error: "Equipment not found" });
-      }
 
       // Add history entry
       await storage.addEquipmentHistory({
         equipmentId: req.params.id,
         action,
-        details: notes || (isBroken ? 'Reported broken' : 'Returned'),
+        details: combinedNotes,
       });
 
       res.json(equipment);
