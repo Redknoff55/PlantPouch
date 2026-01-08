@@ -32,6 +32,7 @@ import {
   Download,
   ScanBarcode,
   Settings,
+  Image,
   Upload,
   Check
 } from "lucide-react";
@@ -44,6 +45,38 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
 import type { IScannerControls } from "@zxing/browser";
+
+type BrandingState = {
+  appName: string;
+  version: string;
+  logo: {
+    text?: string;
+    imageSrc?: string;
+    alt?: string;
+  };
+};
+
+const brandingStorageKey = "plantpouch-branding";
+
+const mergeBranding = (overrides?: Partial<BrandingState>) => ({
+  ...branding,
+  ...overrides,
+  logo: {
+    ...branding.logo,
+    ...(overrides?.logo ?? {}),
+  },
+});
+
+const loadBranding = (): BrandingState => {
+  if (typeof window === "undefined") return branding;
+  try {
+    const raw = localStorage.getItem(brandingStorageKey);
+    if (!raw) return branding;
+    return mergeBranding(JSON.parse(raw) as Partial<BrandingState>);
+  } catch {
+    return branding;
+  }
+};
 
 // --- Components ---
 
@@ -1499,6 +1532,148 @@ function AdminBarcodeScannerModal({
   );
 }
 
+function BrandingModal({
+  isOpen,
+  onClose,
+  value,
+  onChange,
+  onReset,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  value: BrandingState;
+  onChange: (next: BrandingState) => void;
+  onReset: () => void;
+}) {
+  if (!isOpen) return null;
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      if (!result) return;
+      onChange({
+        ...value,
+        logo: {
+          ...value.logo,
+          imageSrc: result,
+        },
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.98, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Branding</h2>
+              <p className="text-xs text-muted-foreground">Admin - App identity settings</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>App Name</Label>
+              <Input
+                value={value.appName}
+                onChange={(e) => onChange({ ...value, appName: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Version</Label>
+              <Input
+                value={value.version}
+                onChange={(e) => onChange({ ...value, version: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Logo Text (fallback)</Label>
+              <Input
+                value={value.logo.text ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    logo: { ...value.logo, text: e.target.value },
+                  })
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Logo Image URL</Label>
+              <Input
+                value={value.logo.imageSrc ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    logo: { ...value.logo, imageSrc: e.target.value },
+                  })
+                }
+                placeholder="/logo.png or https://..."
+              />
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Upload Logo Image</Label>
+                <Input type="file" accept="image/*" onChange={handleFileChange} />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() =>
+                    onChange({
+                      ...value,
+                      logo: { ...value.logo, imageSrc: "" },
+                    })
+                  }
+                >
+                  Clear Image
+                </Button>
+              </div>
+            </div>
+
+            {value.logo.imageSrc && (
+              <div className="rounded-lg border border-border p-4 flex items-center gap-4">
+                <div className="w-12 h-12 rounded bg-muted overflow-hidden">
+                  <img src={value.logo.imageSrc} alt={value.logo.alt ?? "Logo preview"} className="h-full w-full object-cover" />
+                </div>
+                <div className="text-xs text-muted-foreground">Logo preview</div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <Button variant="outline" className="flex-1" onClick={onReset}>
+                Reset Defaults
+              </Button>
+              <Button className="flex-1" onClick={onClose}>
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function AdminImportModal({
   isOpen,
   onClose
@@ -1705,8 +1880,10 @@ export default function Home() {
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isBrandingOpen, setIsBrandingOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
+  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBranding());
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   
@@ -1714,6 +1891,23 @@ export default function Home() {
     total: equipment.length,
     out: equipment.filter(e => e.status === 'checked_out').length,
     broken: equipment.filter(e => e.status === 'broken').length,
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(brandingStorageKey, JSON.stringify(brandingState));
+    } catch {
+      // Ignore localStorage errors.
+    }
+  }, [brandingState]);
+
+  const handleResetBranding = () => {
+    setBrandingState(branding);
+    try {
+      localStorage.removeItem(brandingStorageKey);
+    } catch {
+      // Ignore localStorage errors.
+    }
   };
   
   if (isLoading) {
@@ -1730,21 +1924,21 @@ export default function Home() {
             <div className="flex items-center gap-3">
                 <div
                   className="w-10 h-10 rounded flex items-center justify-center bg-primary text-primary-foreground text-xl shadow-lg shadow-primary/20 overflow-hidden"
-                  aria-label={`${branding.appName} logo`}
+                  aria-label={`${brandingState.appName} logo`}
                 >
-                  {branding.logo.imageSrc ? (
+                  {brandingState.logo.imageSrc ? (
                     <img
-                      src={branding.logo.imageSrc}
-                      alt={branding.logo.alt ?? `${branding.appName} logo`}
+                      src={brandingState.logo.imageSrc}
+                      alt={brandingState.logo.alt ?? `${brandingState.appName} logo`}
                       className="h-full w-full object-cover"
                     />
                   ) : (
-                    <span className="font-bold">{branding.logo.text ?? "PP"}</span>
+                    <span className="font-bold">{brandingState.logo.text ?? "PP"}</span>
                   )}
                 </div>
                 <div>
-                  <h1 className="font-bold leading-none tracking-tight">{branding.appName}</h1>
-                  <span className="text-xs text-muted-foreground font-mono">v{branding.version}</span>
+                  <h1 className="font-bold leading-none tracking-tight">{brandingState.appName}</h1>
+                  <span className="text-xs text-muted-foreground font-mono">v{brandingState.version}</span>
                 </div>
             </div>
             
@@ -1769,6 +1963,17 @@ export default function Home() {
                     data-testid="button-csv-import"
                   >
                     <Upload className="w-5 h-5" />
+                  </Button>
+                )}
+                {isAdminMode && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
+                    onClick={() => setIsBrandingOpen(true)}
+                    data-testid="button-branding"
+                  >
+                    <Image className="w-5 h-5" />
                   </Button>
                 )}
                 <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
@@ -1879,6 +2084,15 @@ export default function Home() {
           <AdminImportModal
             isOpen={isImportModalOpen}
             onClose={() => setIsImportModalOpen(false)}
+          />
+        )}
+        {isBrandingOpen && (
+          <BrandingModal
+            isOpen={isBrandingOpen}
+            onClose={() => setIsBrandingOpen(false)}
+            value={brandingState}
+            onChange={setBrandingState}
+            onReset={handleResetBranding}
           />
         )}
         {isSystemCheckoutOpen && (
