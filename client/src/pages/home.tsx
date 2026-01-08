@@ -330,17 +330,23 @@ function EditEquipmentModal({
   equipment,
   isOpen,
   onClose,
+  locationOptions,
+  onAddLocation,
 }: {
   equipment: Equipment;
   isOpen: boolean;
   onClose: () => void;
+  locationOptions: string[];
+  onAddLocation: (value: string) => void;
 }) {
   const updateEquipment = useUpdateEquipment();
   const [formData, setFormData] = useState({
     name: equipment.name,
     category: equipment.category,
     systemColor: equipment.systemColor ?? "",
+    location: equipment.location ?? "Shop",
   });
+  const [newLocation, setNewLocation] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
@@ -348,6 +354,7 @@ function EditEquipmentModal({
       name: equipment.name,
       category: equipment.category,
       systemColor: equipment.systemColor ?? "",
+      location: equipment.location ?? "Shop",
     });
   }, [equipment, isOpen]);
 
@@ -365,6 +372,7 @@ function EditEquipmentModal({
           name: formData.name,
           category: formData.category,
           systemColor: formData.systemColor || undefined,
+          location: formData.location || "Shop",
         },
       },
       {
@@ -434,6 +442,47 @@ function EditEquipmentModal({
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Select
+                value={formData.location}
+                onValueChange={(val) => setFormData((prev) => ({ ...prev, location: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {locationOptions.map((location) => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Add Location</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  placeholder="e.g. Calibration"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!newLocation.trim()) return;
+                    onAddLocation(newLocation);
+                    setFormData((prev) => ({ ...prev, location: newLocation.trim() }));
+                    setNewLocation("");
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-2">
               <Button variant="outline" className="flex-1" onClick={onClose}>
                 Cancel
@@ -458,11 +507,15 @@ function ActionModal({
   isOpen, 
   onClose,
   canManageEquipment,
+  locationOptions,
+  onAddLocation,
 }: { 
   equipment: Equipment | null; 
   isOpen: boolean; 
   onClose: () => void;
   canManageEquipment: boolean;
+  locationOptions: string[];
+  onAddLocation: (value: string) => void;
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
@@ -471,6 +524,9 @@ function ActionModal({
   
   // Checkout State
   const [workOrder, setWorkOrder] = useState("");
+  const [techName, setTechName] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
+  );
   
   // Checkin State
   const [notes, setNotes] = useState("");
@@ -490,16 +546,26 @@ function ActionModal({
 
   const handleSubmit = () => {
     if (isCheckingOut) {
-      checkout.mutate({ id: equipment.id, workOrder, techName: "Tech #01" });
+      if (!techName.trim()) {
+        toast.error("Enter your name before checking out.");
+        return;
+      }
+      checkout.mutate({ id: equipment.id, workOrder, techName: techName.trim() });
     } else {
       checkin.mutate({ id: equipment.id, notes, isBroken });
     }
     onClose();
     // Reset state
     setWorkOrder("");
+    setTechName("");
     setNotes("");
     setIsBroken(false);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("plantpouch-tech-name", techName);
+  }, [techName]);
 
   const handleCopyQr = async () => {
     try {
@@ -638,6 +704,14 @@ function ActionModal({
                     ) : isCheckingOut ? (
                         <div className="space-y-4">
                             <div className="space-y-2">
+                                <Label>Tech Name</Label>
+                                <Input 
+                                    placeholder="Enter your name" 
+                                    value={techName}
+                                    onChange={(e) => setTechName(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
                                 <Label>Work Order #</Label>
                                 <Input 
                                     placeholder="Enter WO-XXXX" 
@@ -651,7 +725,7 @@ function ActionModal({
                                 className="w-full h-12 text-lg font-semibold" 
                                 size="lg"
                                 onClick={handleSubmit}
-                                disabled={!workOrder}
+                                disabled={!workOrder || !techName.trim()}
                             >
                                 Check Out Equipment
                             </Button>
@@ -698,6 +772,8 @@ function ActionModal({
             equipment={equipment}
             isOpen={isEditing}
             onClose={() => setIsEditing(false)}
+            locationOptions={locationOptions}
+            onAddLocation={onAddLocation}
           />
         )}
     </div>
@@ -716,6 +792,9 @@ function SystemCheckoutModal({
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedColor, setSelectedColor] = useState<string>("");
   const [workOrder, setWorkOrder] = useState("");
+  const [techName, setTechName] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
+  );
   
   // Track which items are selected/verified for checkout
   // Key: Original Item ID, Value: The ID of the item to actually checkout (could be the same, or a replacement)
@@ -747,14 +826,19 @@ function SystemCheckoutModal({
   };
 
   const handleSubmit = () => {
-    if (!workOrder) return;
+    if (!workOrder || !techName.trim()) return;
     
     // Collect all final IDs to checkout
     const finalIds = Object.values(verifiedItems);
     
-    checkoutSystem.mutate({ systemColor: selectedColor, equipmentIds: finalIds, workOrder, techName: "Tech #01" });
+    checkoutSystem.mutate({ systemColor: selectedColor, equipmentIds: finalIds, workOrder, techName: techName.trim() });
     onClose();
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("plantpouch-tech-name", techName);
+  }, [techName]);
 
   if (!isOpen) return null;
 
@@ -900,6 +984,14 @@ function SystemCheckoutModal({
 
                <div className="pt-4 border-t border-border space-y-4">
                   <div className="space-y-2">
+                    <Label>Tech Name</Label>
+                    <Input 
+                        placeholder="Enter your name" 
+                        value={techName}
+                        onChange={(e) => setTechName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label>Work Order #</Label>
                     <Input 
                         placeholder="Enter WO-XXXX" 
@@ -911,7 +1003,7 @@ function SystemCheckoutModal({
                   <Button 
                     className="w-full h-12 text-lg font-bold" 
                     onClick={handleSubmit}
-                    disabled={!workOrder}
+                    disabled={!workOrder || !techName.trim()}
                   >
                     Check Out System
                   </Button>
@@ -1119,10 +1211,14 @@ function SystemCheckInModal({
 
 function AddEquipmentModal({ 
   isOpen, 
-  onClose 
+  onClose,
+  locationOptions,
+  onAddLocation,
 }: { 
   isOpen: boolean; 
-  onClose: () => void 
+  onClose: () => void;
+  locationOptions: string[];
+  onAddLocation: (value: string) => void;
 }) {
   const createEquipment = useCreateEquipment();
   const [formData, setFormData] = useState({
@@ -1130,8 +1226,10 @@ function AddEquipmentModal({
     name: '',
     category: '',
     systemColor: '',
+    location: 'Shop',
     status: 'available'
   });
+  const [newLocation, setNewLocation] = useState("");
 
   if (!isOpen) return null;
 
@@ -1146,11 +1244,12 @@ function AddEquipmentModal({
       name: formData.name,
       category: formData.category,
       systemColor: formData.systemColor || undefined,
+      location: formData.location || "Shop",
       status: 'available'
     }, {
       onSuccess: () => {
         toast.success(`Equipment ${formData.id} added successfully`);
-        setFormData({ id: '', name: '', category: '', systemColor: '', status: 'available' });
+        setFormData({ id: '', name: '', category: '', systemColor: '', location: 'Shop', status: 'available' });
         onClose();
       },
       onError: (error) => {
@@ -1226,6 +1325,47 @@ function AddEquipmentModal({
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Select
+                value={formData.location}
+                onValueChange={(val) => setFormData(prev => ({ ...prev, location: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {locationOptions.map((location) => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Add Location</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  placeholder="e.g. Calibration"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!newLocation.trim()) return;
+                    onAddLocation(newLocation);
+                    setFormData(prev => ({ ...prev, location: newLocation.trim() }));
+                    setNewLocation("");
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+
             <Button 
               className="w-full h-12 text-lg font-semibold mt-4" 
               onClick={handleSubmit}
@@ -1242,10 +1382,14 @@ function AddEquipmentModal({
 
 function AdminBarcodeScannerModal({ 
   isOpen, 
-  onClose 
+  onClose,
+  locationOptions,
+  onAddLocation,
 }: { 
   isOpen: boolean; 
-  onClose: () => void 
+  onClose: () => void;
+  locationOptions: string[];
+  onAddLocation: (value: string) => void;
 }) {
   const createEquipment = useCreateEquipment();
   const [scannedId, setScannedId] = useState("");
@@ -1253,10 +1397,12 @@ function AdminBarcodeScannerModal({
   const [formData, setFormData] = useState({
     name: '',
     category: '',
-    systemColor: ''
+    systemColor: '',
+    location: 'Shop',
   });
   const [addedItems, setAddedItems] = useState<string[]>([]);
   const [step, setStep] = useState<'scan' | 'details'>('scan');
+  const [newLocation, setNewLocation] = useState("");
 
   if (!isOpen) return null;
 
@@ -1282,13 +1428,14 @@ function AdminBarcodeScannerModal({
         name: parsed.name,
         category: parsed.category,
         systemColor: parsed.systemColor || undefined,
+        location: formData.location || "Shop",
         status: 'available'
       }, {
         onSuccess: () => {
           toast.success(`Equipment ${parsedId} added successfully`);
           setAddedItems(prev => [...prev, parsedId]);
           setScannedId("");
-          setFormData({ name: '', category: '', systemColor: '' });
+          setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
           setManualBarcode("");
           setStep('scan');
         },
@@ -1304,7 +1451,8 @@ function AdminBarcodeScannerModal({
       setFormData({
         name: parsed.name || '',
         category: parsed.category || '',
-        systemColor: parsed.systemColor || ''
+        systemColor: parsed.systemColor || '',
+        location: formData.location || 'Shop'
       });
       setStep('details');
       return;
@@ -1328,19 +1476,20 @@ function AdminBarcodeScannerModal({
       name: formData.name,
       category: formData.category,
       systemColor: formData.systemColor || undefined,
+      location: formData.location || "Shop",
       status: 'available'
     });
     
     setAddedItems(prev => [...prev, scannedId]);
     setScannedId("");
-    setFormData({ name: '', category: '', systemColor: '' });
+    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
     setManualBarcode("");
     setStep('scan');
   };
 
   const handleClose = () => {
     setScannedId("");
-    setFormData({ name: '', category: '', systemColor: '' });
+    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
     setManualBarcode("");
     setAddedItems([]);
     setStep('scan');
@@ -1473,6 +1622,47 @@ function AdminBarcodeScannerModal({
                     </SelectContent>
                   </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <Label>Location</Label>
+                  <Select
+                    value={formData.location}
+                    onValueChange={(val) => setFormData(prev => ({ ...prev, location: val }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a location..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {locationOptions.map((location) => (
+                        <SelectItem key={location} value={location}>
+                          {location}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Add Location</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      placeholder="e.g. Calibration"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!newLocation.trim()) return;
+                        onAddLocation(newLocation);
+                        setFormData(prev => ({ ...prev, location: newLocation.trim() }));
+                        setNewLocation("");
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -1482,7 +1672,7 @@ function AdminBarcodeScannerModal({
                   onClick={() => {
                     setStep('scan');
                     setScannedId("");
-                    setFormData({ name: '', category: '', systemColor: '' });
+                    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
                   }}
                   data-testid="button-cancel-add"
                 >
@@ -1717,6 +1907,7 @@ function AdminImportModal({
     }, {});
     const systemColorIndex =
       headerMap.systemcolor ?? headerMap["system_color"] ?? headerMap["system color"];
+    const locationIndex = headerMap.location ?? headerMap["location"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
     const dataLines = hasHeader ? lines.slice(1) : lines;
@@ -1729,6 +1920,7 @@ function AdminImportModal({
       const name = hasHeader ? values[headerMap.name] : values[1];
       const category = hasHeader ? values[headerMap.category] : values[2];
       const systemColor = hasHeader ? values[systemColorIndex ?? -1] : values[3];
+      const location = hasHeader ? values[locationIndex ?? -1] : values[4];
 
       if (!id || !name || !category) {
         nextErrors.push(`Row ${index + 1}: missing required fields (id, name, category).`);
@@ -1740,6 +1932,7 @@ function AdminImportModal({
         name: name.trim(),
         category: category.trim(),
         systemColor: systemColor?.trim() || undefined,
+        location: location?.trim() || "Shop",
         status: "available"
       });
     });
@@ -1859,6 +2052,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
   const canManageEquipment = adminEnabled && isAdminMode;
+  const [customLocations, setCustomLocations] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("plantpouch-locations");
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   
@@ -1868,6 +2070,70 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     broken: equipment.filter(e => e.status === 'broken').length,
   };
 
+  const locationOptions = Array.from(
+    new Set([
+      "Shop",
+      "Repairs",
+      ...equipment.map((item) => item.location || "Shop"),
+      ...customLocations,
+    ])
+  );
+
+  const checkedOutGroups = Object.values(
+    equipment
+      .filter((item) => item.status === "checked_out")
+      .reduce((acc, item) => {
+        const tech = item.checkedOutBy || "Unknown tech";
+        const workOrder = item.workOrder || "—";
+        const key = item.systemColor
+          ? `system:${item.systemColor}:${workOrder}:${tech}`
+          : `item:${item.id}`;
+
+        if (!acc[key]) {
+          acc[key] = {
+            key,
+            systemColor: item.systemColor || null,
+            tech,
+            workOrder,
+            items: [],
+          };
+        }
+        acc[key].items.push(item);
+        return acc;
+      }, {} as Record<string, { key: string; systemColor: string | null; tech: string; workOrder: string; items: Equipment[] }>)
+  ).sort((a, b) => {
+    const aTime = a.items[0]?.checkedOutAt ? new Date(a.items[0].checkedOutAt).getTime() : 0;
+    const bTime = b.items[0]?.checkedOutAt ? new Date(b.items[0].checkedOutAt).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  const getLocation = (item: Equipment) => item.location || "Shop";
+
+  const systemsByColor = Object.values(
+    equipment
+      .filter((item) => item.systemColor)
+      .reduce((acc, item) => {
+        const key = item.systemColor as string;
+        if (!acc[key]) {
+          acc[key] = { color: key, items: [] as Equipment[] };
+        }
+        acc[key].items.push(item);
+        return acc;
+      }, {} as Record<string, { color: string; items: Equipment[] }>)
+  );
+
+  const goodSystemsInShop = systemsByColor.filter((system) =>
+    system.items.every((item) => item.status === "available" && getLocation(item) === "Shop")
+  );
+
+  const brokenSystems = systemsByColor.filter((system) =>
+    system.items.some((item) => item.status === "broken")
+  );
+
+  const repairSystems = systemsByColor.filter((system) =>
+    system.items.some((item) => getLocation(item) === "Repairs")
+  );
+
   useEffect(() => {
     try {
       localStorage.setItem(brandingStorageKey, JSON.stringify(brandingState));
@@ -1875,6 +2141,20 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       // Ignore localStorage errors.
     }
   }, [brandingState]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("plantpouch-locations", JSON.stringify(customLocations));
+    } catch {
+      // Ignore localStorage errors.
+    }
+  }, [customLocations]);
+
+  const handleAddLocation = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+  };
 
   const handleResetBranding = () => {
     setBrandingState(branding);
@@ -1988,6 +2268,109 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
         </div>
 
+        {canManageEquipment && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold tracking-tight">Checked Out</h2>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">Live</span>
+            </div>
+
+            {checkedOutGroups.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No active checkouts.</div>
+            ) : (
+              <div className="space-y-2">
+                {checkedOutGroups.map((group) => {
+                  const sample = group.items[0];
+                  const label = group.systemColor
+                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}`
+                    : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}`;
+                  const time = sample?.checkedOutAt
+                    ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
+                    : "—";
+
+                  return (
+                    <div key={group.key} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="text-sm font-medium">{label}</div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {group.items.length > 1 && (
+                          <Badge variant="outline" className="text-[10px] font-mono">
+                            {group.items.length} items
+                          </Badge>
+                        )}
+                        <span>{time}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {canManageEquipment && (
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  {goodSystemsInShop.length}
+                </Badge>
+              </div>
+              {goodSystemsInShop.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No complete systems ready.</div>
+              ) : (
+                <div className="space-y-1">
+                  {goodSystemsInShop.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Broken Systems</h3>
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  {brokenSystems.length}
+                </Badge>
+              </div>
+              {brokenSystems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No broken systems.</div>
+              ) : (
+                <div className="space-y-1">
+                  {brokenSystems.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Sent for Repairs</h3>
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  {repairSystems.length}
+                </Badge>
+              </div>
+              {repairSystems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">Nothing out for repair.</div>
+              ) : (
+                <div className="space-y-1">
+                  {repairSystems.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Action Button */}
         <div className="grid grid-cols-2 gap-4">
           <button 
@@ -2050,13 +2433,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         {canManageEquipment && isAddModalOpen && (
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
-            onClose={() => setIsAddModalOpen(false)} 
+            onClose={() => setIsAddModalOpen(false)}
+            locationOptions={locationOptions}
+            onAddLocation={handleAddLocation}
           />
         )}
         {canManageEquipment && isBarcodeScannerOpen && (
           <AdminBarcodeScannerModal
             isOpen={isBarcodeScannerOpen}
             onClose={() => setIsBarcodeScannerOpen(false)}
+            locationOptions={locationOptions}
+            onAddLocation={handleAddLocation}
           />
         )}
         {canManageEquipment && isImportModalOpen && (
@@ -2092,6 +2479,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 isOpen={!!selectedEquipmentId} 
                 onClose={() => setSelectedEquipmentId(null)}
                 canManageEquipment={canManageEquipment}
+                locationOptions={locationOptions}
+                onAddLocation={handleAddLocation}
             />
         )}
       </AnimatePresence>

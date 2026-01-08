@@ -9,6 +9,7 @@ export const equipment = pgTable("equipment", {
   category: text("category").notNull(),
   systemColor: text("system_color"),
   status: text("status").notNull().default('available'),
+  location: text("location").notNull().default('Shop'),
   workOrder: text("work_order"),
   checkedOutBy: text("checked_out_by"),
   checkedOutAt: timestamp("checked_out_at"),
