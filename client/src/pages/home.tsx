@@ -1005,8 +1005,57 @@ function AdminBarcodeScannerModal({
 
   if (!isOpen) return null;
 
+  const tryParseQrPayload = (payload: string) => {
+    try {
+      return JSON.parse(payload) as {
+        id?: string;
+        name?: string;
+        category?: string;
+        systemColor?: string;
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const handleScan = (barcode: string) => {
+    const parsed = tryParseQrPayload(barcode);
+    if (parsed?.id && parsed?.name && parsed?.category) {
+      createEquipment.mutate({
+        id: parsed.id,
+        name: parsed.name,
+        category: parsed.category,
+        systemColor: parsed.systemColor || undefined,
+        status: 'available'
+      }, {
+        onSuccess: () => {
+          toast.success(`Equipment ${parsed.id} added successfully`);
+          setAddedItems(prev => [...prev, parsed.id]);
+          setScannedId("");
+          setFormData({ name: '', category: '', systemColor: '' });
+          setManualBarcode("");
+          setStep('scan');
+        },
+        onError: (error) => {
+          toast.error(`Failed to add equipment: ${error.message}`);
+        }
+      });
+      return;
+    }
+
+    if (parsed?.id) {
+      setScannedId(parsed.id);
+      setFormData({
+        name: parsed.name || '',
+        category: parsed.category || '',
+        systemColor: parsed.systemColor || ''
+      });
+      setStep('details');
+      return;
+    }
+
     setScannedId(barcode);
+    setFormData({ name: '', category: '', systemColor: '' });
     setStep('details');
   };
 
