@@ -44,39 +44,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
+import { brandingStorageKey, loadBrandingFromStorage, type BrandingState } from "@/lib/branding";
 import type { IScannerControls } from "@zxing/browser";
-
-type BrandingState = {
-  appName: string;
-  version: string;
-  logo: {
-    text?: string;
-    imageSrc?: string;
-    alt?: string;
-  };
-};
-
-const brandingStorageKey = "plantpouch-branding";
-
-const mergeBranding = (overrides?: Partial<BrandingState>) => ({
-  ...branding,
-  ...overrides,
-  logo: {
-    ...branding.logo,
-    ...(overrides?.logo ?? {}),
-  },
-});
-
-const loadBranding = (): BrandingState => {
-  if (typeof window === "undefined") return branding;
-  try {
-    const raw = localStorage.getItem(brandingStorageKey);
-    if (!raw) return branding;
-    return mergeBranding(JSON.parse(raw) as Partial<BrandingState>);
-  } catch {
-    return branding;
-  }
-};
 
 // --- Components ---
 
@@ -487,11 +456,13 @@ function EditEquipmentModal({
 function ActionModal({ 
   equipment, 
   isOpen, 
-  onClose 
+  onClose,
+  canManageEquipment,
 }: { 
   equipment: Equipment | null; 
   isOpen: boolean; 
-  onClose: () => void 
+  onClose: () => void;
+  canManageEquipment: boolean;
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
@@ -626,23 +597,25 @@ function ActionModal({
                     </Button>
                 </div>
 
-                <div className="grid gap-2 sm:grid-cols-2">
-                    <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setIsEditing(true)}
-                    >
-                        Edit Equipment
-                    </Button>
-                    <Button
-                        variant="destructive"
-                        className="w-full"
-                        onClick={handleDelete}
-                        disabled={deleteEquipment.isPending}
-                    >
-                        {deleteEquipment.isPending ? "Deleting..." : "Delete Equipment"}
-                    </Button>
-                </div>
+                {canManageEquipment && (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                      <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => setIsEditing(true)}
+                      >
+                          Edit Equipment
+                      </Button>
+                      <Button
+                          variant="destructive"
+                          className="w-full"
+                          onClick={handleDelete}
+                          disabled={deleteEquipment.isPending}
+                      >
+                          {deleteEquipment.isPending ? "Deleting..." : "Delete Equipment"}
+                      </Button>
+                  </div>
+                )}
 
                 <div className="pt-4 border-t border-border">
                     {/* Action Form */}
@@ -720,7 +693,7 @@ function ActionModal({
             </div>
         </motion.div>
 
-        {isEditing && (
+        {canManageEquipment && isEditing && (
           <EditEquipmentModal
             equipment={equipment}
             isOpen={isEditing}
@@ -1872,8 +1845,9 @@ function AdminImportModal({
   );
 }
 
-export default function Home() {
+export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
+  const adminEnabled = mode === "admin";
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -1881,9 +1855,10 @@ export default function Home() {
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
-  const [isAdminMode, setIsAdminMode] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(adminEnabled);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
-  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBranding());
+  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
+  const canManageEquipment = adminEnabled && isAdminMode;
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   
@@ -1943,7 +1918,7 @@ export default function Home() {
             </div>
             
             <div className="flex gap-2">
-                {isAdminMode && (
+                {canManageEquipment && (
                   <Button 
                     variant="outline" 
                     size="icon" 
@@ -1954,7 +1929,7 @@ export default function Home() {
                     <ScanBarcode className="w-5 h-5" />
                   </Button>
                 )}
-                {isAdminMode && (
+                {canManageEquipment && (
                   <Button
                     variant="outline"
                     size="icon"
@@ -1965,7 +1940,7 @@ export default function Home() {
                     <Upload className="w-5 h-5" />
                   </Button>
                 )}
-                {isAdminMode && (
+                {canManageEquipment && (
                   <Button
                     variant="outline"
                     size="icon"
@@ -1976,18 +1951,22 @@ export default function Home() {
                     <Image className="w-5 h-5" />
                   </Button>
                 )}
-                <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
-                   <Plus className="w-5 h-5" />
-                </Button>
-                <Button 
-                  variant={isAdminMode ? "default" : "outline"}
-                  size="icon" 
-                  className={cn("shrink-0", isAdminMode && "bg-amber-500 hover:bg-amber-600")}
-                  onClick={() => setIsAdminMode(!isAdminMode)}
-                  data-testid="button-toggle-admin"
-                >
-                   <Settings className="w-5 h-5" />
-                </Button>
+                {canManageEquipment && (
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
+                     <Plus className="w-5 h-5" />
+                  </Button>
+                )}
+                {adminEnabled && (
+                  <Button 
+                    variant={isAdminMode ? "default" : "outline"}
+                    size="icon" 
+                    className={cn("shrink-0", isAdminMode && "bg-amber-500 hover:bg-amber-600")}
+                    onClick={() => setIsAdminMode(!isAdminMode)}
+                    data-testid="button-toggle-admin"
+                  >
+                     <Settings className="w-5 h-5" />
+                  </Button>
+                )}
             </div>
         </div>
       </header>
@@ -2068,25 +2047,25 @@ export default function Home() {
       )}
 
       <AnimatePresence>
-        {isAddModalOpen && (
+        {canManageEquipment && isAddModalOpen && (
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)} 
           />
         )}
-        {isBarcodeScannerOpen && (
+        {canManageEquipment && isBarcodeScannerOpen && (
           <AdminBarcodeScannerModal
             isOpen={isBarcodeScannerOpen}
             onClose={() => setIsBarcodeScannerOpen(false)}
           />
         )}
-        {isImportModalOpen && (
+        {canManageEquipment && isImportModalOpen && (
           <AdminImportModal
             isOpen={isImportModalOpen}
             onClose={() => setIsImportModalOpen(false)}
           />
         )}
-        {isBrandingOpen && (
+        {canManageEquipment && isBrandingOpen && (
           <BrandingModal
             isOpen={isBrandingOpen}
             onClose={() => setIsBrandingOpen(false)}
@@ -2111,7 +2090,8 @@ export default function Home() {
             <ActionModal 
                 equipment={selectedEquipment || null} 
                 isOpen={!!selectedEquipmentId} 
-                onClose={() => setSelectedEquipmentId(null)} 
+                onClose={() => setSelectedEquipmentId(null)}
+                canManageEquipment={canManageEquipment}
             />
         )}
       </AnimatePresence>
