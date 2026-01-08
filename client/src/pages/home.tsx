@@ -1,5 +1,3 @@
-import { useState } from "react";
-import type { Equipment } from "@shared/schema";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { Equipment, InsertEquipment } from "@shared/schema";
 import { useEquipment, useCreateEquipment, useCheckoutSystem, useCheckinByWorkOrder, useCheckout, useCheckin } from "@/lib/hooks";
@@ -66,7 +64,7 @@ function StatusBadge({ status }: { status: string }) {
 
 function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () => void }) {
   const isBroken = item.status === 'broken';
-@@ -93,152 +98,308 @@ function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () =>
+function EquipmentListItem({ item, onClick }: { item: Equipment; onClick: () =>
                  <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
                     {item.systemColor} Sys
                  </Badge>
@@ -386,7 +384,7 @@ function ActionModal({
                     <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
                         <span className="text-muted-foreground block text-xs mb-1">Status</span>
                         <StatusBadge status={equipment.status} />
-@@ -253,50 +414,65 @@ function ActionModal({
+function ActionModal({
                     <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/10 space-y-2">
                         <div className="flex justify-between text-sm">
                             <span className="text-muted-foreground">Work Order</span>
@@ -452,9 +450,54 @@ function ActionModal({
                                 <Input 
                                     placeholder="Enter WO-XXXX" 
                                     className="font-mono"
-@@ -888,52 +1064,101 @@ function AddEquipmentModal({
-      </motion.div>
-    </div>
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Notes</Label>
+                                <Textarea placeholder="Enter any notes about this checkout" />
+                            </div>
+                            <Button className="w-full" onClick={() => {
+                                checkout.mutate({ id: equipment.id, workOrder: "WO-XXXX", notes: "Checked out for maintenance" });
+                                onClose();
+                            }}>
+                                Check Out
+                            </Button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>Work Order #</Label>
+                                <Input 
+                                    placeholder="Enter WO-XXXX" 
+                                    className="font-mono"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Notes</Label>
+                                <Textarea placeholder="Enter any notes about this checkin" />
+                            </div>
+                            <Button className="w-full" onClick={() => {
+                                checkin.mutate({ id: equipment.id, workOrder: "WO-XXXX", notes: "Returned after maintenance" });
+                                onClose();
+                            }}>
+                                Check In
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
+
+        {/* Add Equipment Modal */}
+        {isAddingEquipment && (
+            <AddEquipmentModal isOpen={isAddingEquipment} onClose={() => setIsAddingEquipment(false)} />
+        )}
+
+        {/* Admin Barcode Scanner Modal */}
+        {isAdminBarcodeScannerOpen && (
+            <AdminBarcodeScannerModal isOpen={isAdminBarcodeScannerOpen} onClose={() => setIsAdminBarcodeScannerOpen(false)} />
+        )}
+    </>
   );
 }
 
@@ -554,12 +597,7 @@ function AdminBarcodeScannerModal({
     setManualBarcode("");
     setStep('scan');
   };
-@@ -1083,101 +1308,311 @@ function AdminBarcodeScannerModal({
-                    setStep('scan');
-                    setScannedId("");
-                    setFormData({ name: '', category: '', systemColor: '' });
-                  }}
-                  data-testid="button-cancel-add"
+function AdminBarcodeScannerModal({
                 >
                   Cancel
                 </Button>
@@ -866,7 +904,7 @@ export default function Home() {
             </div>
             <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
                 <span className="block text-3xl font-bold font-mono text-destructive">{stats.broken}</span>
-@@ -1238,48 +1673,54 @@ export default function Home() {
+export default function Home() {
 
       {/* Modals */}
       {isScannerOpen && (
