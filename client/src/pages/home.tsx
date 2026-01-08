@@ -42,6 +42,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
+import { branding } from "@/config/branding";
 import type { IScannerControls } from "@zxing/browser";
 
 // --- Components ---
@@ -1727,12 +1728,23 @@ export default function Home() {
       <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b border-border p-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary rounded flex items-center justify-center font-bold text-primary-foreground text-xl shadow-lg shadow-primary/20">
-                    PP
+                <div
+                  className="w-10 h-10 rounded flex items-center justify-center bg-primary text-primary-foreground text-xl shadow-lg shadow-primary/20 overflow-hidden"
+                  aria-label={`${branding.appName} logo`}
+                >
+                  {branding.logo.imageSrc ? (
+                    <img
+                      src={branding.logo.imageSrc}
+                      alt={branding.logo.alt ?? `${branding.appName} logo`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="font-bold">{branding.logo.text ?? "PP"}</span>
+                  )}
                 </div>
                 <div>
-                    <h1 className="font-bold leading-none tracking-tight">PlantPouch</h1>
-                    <span className="text-xs text-muted-foreground font-mono">v1.0</span>
+                  <h1 className="font-bold leading-none tracking-tight">{branding.appName}</h1>
+                  <span className="text-xs text-muted-foreground font-mono">v{branding.version}</span>
                 </div>
             </div>
             
