@@ -2719,10 +2719,29 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
   };
 
-  const handleRemoveLocation = (value: string) => {
+  const handleRemoveLocation = async (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
-    setCustomLocations((prev) => prev.filter((location) => location !== trimmed));
+    const affectedItems = equipment.filter(
+      (item) => (item.location ?? "Shop") === trimmed
+    );
+    try {
+      if (affectedItems.length > 0) {
+        await Promise.all(
+          affectedItems.map((item) =>
+            api.equipment.update(item.id, { location: "Shop" })
+          )
+        );
+      }
+      setCustomLocations((prev) => prev.filter((location) => location !== trimmed));
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`${trimmed} removed. ${affectedItems.length} item(s) moved to Shop.`);
+      if (locationFilter === trimmed) {
+        setLocationFilter("Shop");
+      }
+    } catch {
+      toast.error("Failed to remove location.");
+    }
   };
 
   const handleTransferSystem = async (color: string, location: string) => {
