@@ -869,6 +869,16 @@ function SystemCheckoutModal({
 
   // Get unique system colors
   const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
+  const systemLocationSummary = systemColors.map((color) => {
+    const items = equipment.filter((item) => item.systemColor === color);
+    const uniqueLocations = Array.from(
+      new Set(items.map((item) => item.location || "Shop"))
+    );
+    return {
+      color,
+      location: uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed",
+    };
+  });
   const colorClassMap: Record<string, string> = {
     Blue: "bg-blue-500",
     Red: "bg-red-500",
@@ -951,12 +961,14 @@ function SystemCheckoutModal({
                         (item.temporarySystemColor || item.systemColor) === color &&
                         item.status === "checked_out"
                     );
+                    const locationLabel =
+                      systemLocationSummary.find((entry) => entry.color === color)?.location ?? "Shop";
                     return (
                         <Button
                             key={color}
                             variant="outline"
                             className={cn(
-                                "h-20 text-lg font-semibold border-2 relative overflow-hidden",
+                                "h-24 text-lg font-semibold border-2 relative overflow-hidden flex flex-col items-start justify-center gap-1",
                                 hasItems && !hasActiveCheckout
                                   ? "hover:border-primary hover:bg-primary/5"
                                   : "opacity-50 cursor-not-allowed"
@@ -965,7 +977,8 @@ function SystemCheckoutModal({
                             disabled={!hasItems || hasActiveCheckout}
                         >
                             <div className={cn("absolute inset-y-0 left-0 w-2", colorClassMap[color] ?? "bg-foreground/20")} />
-                            {color} System{hasActiveCheckout ? " (Checked Out)" : ""}
+                            <span>{color} System{hasActiveCheckout ? " (Checked Out)" : ""}</span>
+                            <span className="text-xs text-muted-foreground">Location: {locationLabel}</span>
                         </Button>
                     );
                 })}
@@ -2488,6 +2501,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
   const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [locationFilter, setLocationFilter] = useState("Shop");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2524,6 +2538,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const baseSystemColors = Array.from(
     new Set(equipment.map((item) => item.systemColor).filter((color): color is string => !!color))
   );
+  const systemLocationSummary = baseSystemColors.map((color) => {
+    const items = equipment.filter((item) => item.systemColor === color);
+    const uniqueLocations = Array.from(
+      new Set(items.map((item) => item.location || "Shop"))
+    );
+    return {
+      color,
+      location: uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed",
+    };
+  });
 
   const checkedOutGroups = Object.values(
     equipment
@@ -2695,6 +2719,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
   };
 
+  const handleRemoveLocation = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setCustomLocations((prev) => prev.filter((location) => location !== trimmed));
+  };
+
   const handleTransferSystem = async (color: string, location: string) => {
     if (!color || !location) return;
     const itemsToMove = equipment.filter(
@@ -2722,6 +2752,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       toast.error("Failed to transfer system.");
     }
   };
+
+  const systemsAtLocation = systemLocationSummary.filter(
+    (system) => system.location === locationFilter
+  );
 
   const togglePanel = (key: string) => {
     setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -3065,6 +3099,36 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 Transfer Location
               </Button>
             </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex-1">
+                <Label className="text-xs uppercase text-muted-foreground">Systems at location</Label>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger className="mt-2">
+                    <SelectValue placeholder="Select a location..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locationOptions.map((location) => (
+                      <SelectItem key={location} value={location}>
+                        {location}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1">
+                {systemsAtLocation.length === 0 ? (
+                  <div className="text-xs text-muted-foreground pt-6">No systems assigned.</div>
+                ) : (
+                  <div className="pt-6 space-y-1 text-xs">
+                    {systemsAtLocation.map((system) => (
+                      <div key={system.color} className="font-medium">
+                        {system.color} System
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="grid gap-2 sm:grid-cols-2">
               {locationOptions.map((location) => {
                 const count = equipment.filter(
@@ -3076,12 +3140,25 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     .map((item) => item.systemColor)
                     .filter(Boolean)
                 ).size;
+                const isCustom = customLocations.includes(location);
                 return (
                   <div key={location} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
                     <span className="font-semibold">{location}</span>
-                    <span className="text-muted-foreground">
-                      {systemCount} systems • {count} items
-                    </span>
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <span>
+                        {systemCount} systems • {count} items
+                      </span>
+                      {isCustom && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={() => handleRemoveLocation(location)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
