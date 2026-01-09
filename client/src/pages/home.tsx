@@ -2888,8 +2888,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           </div>
         )}
 
-        {canManageEquipment && (
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold tracking-tight">Checked Out</h2>
               <span className="text-xs text-muted-foreground uppercase tracking-wider">Live</span>
@@ -2961,7 +2960,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               </div>
             )}
           </div>
-        )}
 
         {canManageEquipment && (
           <div className="grid gap-4 md:grid-cols-4">
