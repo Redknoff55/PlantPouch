@@ -2663,10 +2663,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         data: {
           status: "available",
           location: "Shop",
-          workOrder: undefined,
-          checkedOutBy: undefined,
-          checkedOutAt: undefined,
-          replacementId: undefined,
+          workOrder: null,
+          checkedOutBy: null,
+          checkedOutAt: null,
+          replacementId: null,
         },
       },
       {
@@ -2679,12 +2679,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             {
               id: replacement.id,
               data: {
-                temporarySystemColor: undefined,
-                swappedFromId: undefined,
+                temporarySystemColor: null,
+                swappedFromId: null,
                 status: "available",
-                workOrder: undefined,
-                checkedOutBy: undefined,
-                checkedOutAt: undefined,
+                workOrder: null,
+                checkedOutBy: null,
+                checkedOutAt: null,
               },
             },
             {
@@ -2710,16 +2710,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       : undefined;
     try {
       await api.equipment.update(borrowedItem.id, {
-        temporarySystemColor: undefined,
-        swappedFromId: undefined,
+        temporarySystemColor: null,
+        swappedFromId: null,
         status: "available",
-        workOrder: undefined,
-        checkedOutBy: undefined,
-        checkedOutAt: undefined,
+        workOrder: null,
+        checkedOutBy: null,
+        checkedOutAt: null,
       });
       if (brokenItem) {
         await api.equipment.update(brokenItem.id, {
-          replacementId: undefined,
+          replacementId: null,
           status: "available",
           location: "Shop",
         });
