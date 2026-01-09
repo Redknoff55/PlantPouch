@@ -277,10 +277,11 @@ export async function registerRoutes(
   // Swap equipment component
   app.post("/api/equipment/swap", async (req, res) => {
     try {
-      const { brokenId, replacementId, context } = req.body as {
+      const { brokenId, replacementId, context, reason } = req.body as {
         brokenId?: string;
         replacementId?: string;
         context?: "broken" | "checked_out";
+        reason?: string;
       };
 
       if (!brokenId || !replacementId) {
@@ -294,6 +295,10 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Equipment not found" });
       }
 
+      const reasonText = reason?.trim();
+      const reasonDetails = reasonText ? `Swap reason: ${reasonText}` : "Swap reason: not provided";
+      const brokenNotes = [brokenItem.notes, reasonDetails].filter(Boolean).join(" | ");
+
       await storage.updateEquipment(brokenId, {
         status: "broken",
         location: "Shop",
@@ -301,6 +306,7 @@ export async function registerRoutes(
         checkedOutBy: undefined,
         checkedOutAt: undefined,
         replacementId: replacementId,
+        notes: brokenNotes || undefined,
       });
 
       const replacementPayload: Partial<InsertEquipment> = {
@@ -317,6 +323,20 @@ export async function registerRoutes(
       }
 
       await storage.updateEquipment(replacementId, replacementPayload);
+
+      await storage.addEquipmentHistory({
+        equipmentId: brokenId,
+        action: "swap_out",
+        details: `${replacementId} borrowed. ${reasonDetails}`,
+        workOrder: brokenItem.workOrder || undefined,
+      });
+
+      await storage.addEquipmentHistory({
+        equipmentId: replacementId,
+        action: "swap_in",
+        details: `${brokenId} replaced. ${reasonDetails}`,
+        workOrder: brokenItem.workOrder || undefined,
+      });
 
       res.json({ ok: true });
     } catch (error) {

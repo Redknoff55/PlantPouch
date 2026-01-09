@@ -90,7 +90,7 @@ export const api = {
       if (!res.ok) throw new Error('Failed to checkin equipment');
       return res.json();
     },
-    swap: async (params: { brokenId: string; replacementId: string; context: 'broken' | 'checked_out' }): Promise<void> => {
+    swap: async (params: { brokenId: string; replacementId: string; context: 'broken' | 'checked_out'; reason?: string }): Promise<void> => {
       const res = await fetch(`${API_BASE}/equipment/swap`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

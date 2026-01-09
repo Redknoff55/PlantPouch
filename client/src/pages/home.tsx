@@ -2260,14 +2260,16 @@ function SwapModal({
   onClose: () => void;
   brokenItem: Equipment | null;
   replacementOptions: Equipment[];
-  onConfirm: (replacement: Equipment) => void;
+  onConfirm: (replacement: Equipment, reason: string) => void;
 }) {
   const [selectedId, setSelectedId] = useState("");
+  const [reason, setReason] = useState("");
 
   if (!isOpen || !brokenItem) return null;
 
   useEffect(() => {
     setSelectedId("");
+    setReason("");
   }, [brokenItem?.id, isOpen]);
 
   const selected = replacementOptions.find((item) => item.id === selectedId);
@@ -2310,14 +2312,24 @@ function SwapModal({
             </Select>
           </div>
 
+          <div className="space-y-2">
+            <Label>Reason for swap</Label>
+            <Textarea
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="e.g. Encoder failed in the field; swapped to keep system running."
+              className="min-h-[96px]"
+            />
+          </div>
+
           <div className="flex gap-3 pt-2">
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cancel
             </Button>
             <Button
               className="flex-1"
-              onClick={() => selected && onConfirm(selected)}
-              disabled={!selected}
+              onClick={() => selected && onConfirm(selected, reason.trim())}
+              disabled={!selected || reason.trim().length === 0}
             >
               Confirm Swap
             </Button>
@@ -2636,13 +2648,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const handleAssignReplacement = async (
     brokenItem: Equipment,
     replacementItem: Equipment,
-    context: "broken" | "checked_out"
+    context: "broken" | "checked_out",
+    reason: string
   ) => {
     try {
       await api.equipment.swap({
         brokenId: brokenItem.id,
         replacementId: replacementItem.id,
         context,
+        reason,
       });
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
       toast.success(`${replacementItem.id} swapped into ${brokenItem.systemColor} system.`);
@@ -3300,9 +3314,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             onClose={() => setIsSwapOpen(false)}
             brokenItem={swapTarget}
             replacementOptions={swapCandidates}
-            onConfirm={(replacement) => {
+            onConfirm={(replacement, reason) => {
               if (!swapTarget) return;
-              handleAssignReplacement(swapTarget, replacement, swapContext);
+              handleAssignReplacement(swapTarget, replacement, swapContext, reason);
               setIsSwapOpen(false);
             }}
           />
