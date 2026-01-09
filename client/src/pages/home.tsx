@@ -2614,7 +2614,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
-  const [bagPreviewColor, setBagPreviewColor] = useState("");
+  const [bagPreviewColor, setBagPreviewColor] = useState("none");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
@@ -2917,7 +2917,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     return "Missing";
   };
 
-  const bagPreviewItems = bagPreviewColor
+  const bagPreviewItems = bagPreviewColor !== "none"
     ? equipment.filter(
         (item) => item.category !== "Computer" && item.systemColor === bagPreviewColor
       )
@@ -3685,7 +3685,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <SelectValue placeholder="Color bags" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">No bag selected</SelectItem>
+                      <SelectItem value="none">No bag selected</SelectItem>
                       {bagColorOptions.map((color) => (
                         <SelectItem key={color} value={color}>
                           {color} Bag
@@ -3696,7 +3696,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 </div>
             </div>
 
-            {bagPreviewColor && (
+            {bagPreviewColor !== "none" && (
               <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">{bagPreviewColor} Bag Contents</span>
