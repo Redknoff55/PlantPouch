@@ -155,6 +155,19 @@ export async function registerRoutes(
             notes,
           });
 
+          if (item.temporarySystemColor) {
+            await storage.updateEquipment(item.id, {
+              temporarySystemColor: undefined,
+              swappedFromId: undefined,
+              status: 'available',
+            });
+            if (item.swappedFromId) {
+              await storage.updateEquipment(item.swappedFromId, {
+                replacementId: undefined,
+              });
+            }
+          }
+
           // Add history entry
           await storage.addEquipmentHistory({
             equipmentId: item.id,
@@ -233,6 +246,19 @@ export async function registerRoutes(
         checkedOutAt: undefined,
         notes: combinedNotes || undefined,
       });
+
+      if (equipment?.temporarySystemColor) {
+        await storage.updateEquipment(req.params.id, {
+          temporarySystemColor: undefined,
+          swappedFromId: undefined,
+          status: 'available',
+        });
+        if (equipment.swappedFromId) {
+          await storage.updateEquipment(equipment.swappedFromId, {
+            replacementId: undefined,
+          });
+        }
+      }
 
       // Add history entry
       await storage.addEquipmentHistory({
