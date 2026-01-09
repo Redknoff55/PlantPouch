@@ -871,7 +871,7 @@ function SystemCheckoutModal({
 
   const isItemAvailable = (item: Equipment) =>
     item.status === "available" &&
-    (item.location ?? "Shop") === "Shop" &&
+    (item.location ?? "Shop") !== "Repairs" &&
     !item.temporarySystemColor;
 
   // Get unique system colors
@@ -1122,8 +1122,7 @@ function SystemCheckoutModal({
                             e.category === item.category && 
                             e.status === 'available' && 
                             e.id !== item.id &&
-                            !e.temporarySystemColor &&
-                            (e.location ?? "Shop") === "Shop"
+                            !e.temporarySystemColor
                         );
 
                         return (
@@ -2474,28 +2473,65 @@ function SwapModal({
 function TransferSystemModal({
   isOpen,
   onClose,
-  systemColors,
+  equipment,
+  computerColors,
+  bagColors,
   locationOptions,
   onAddLocation,
   onTransfer,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  systemColors: string[];
+  equipment: Equipment[];
+  computerColors: string[];
+  bagColors: string[];
   locationOptions: string[];
   onAddLocation: (value: string) => void;
-  onTransfer: (color: string, location: string) => void;
+  onTransfer: (itemIds: string[], location: string) => void;
 }) {
-  const [selectedColor, setSelectedColor] = useState("");
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [selectedComputerColor, setSelectedComputerColor] = useState("");
+  const [selectedBagColor, setSelectedBagColor] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [newLocation, setNewLocation] = useState("");
 
   useEffect(() => {
     if (!isOpen) return;
-    setSelectedColor("");
+    setStep(1);
+    setSelectedComputerColor("");
+    setSelectedBagColor("");
     setSelectedLocation("");
     setNewLocation("");
   }, [isOpen]);
+
+  const isTransferable = (item: Equipment) =>
+    item.status === "available" && (item.location ?? "Shop") !== "Repairs";
+
+  const getMissingLabel = (item: Equipment) => {
+    if (item.location === "Repairs") return "repairs";
+    if (item.status === "broken") return "broken";
+    if (item.status === "checked_out") return "checked out";
+    if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
+    if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
+    return "missing";
+  };
+
+  const selectedComputer = equipment.find(
+    (item) =>
+      item.category === "Computer" &&
+      item.systemColor === selectedComputerColor &&
+      isTransferable(item)
+  );
+  const bagItems = equipment.filter(
+    (item) =>
+      item.category !== "Computer" &&
+      (item.temporarySystemColor || item.systemColor) === selectedBagColor
+  );
+  const missingBagItems = bagItems.filter((item) => !isTransferable(item));
+  const transferItems = [
+    ...(selectedComputer ? [selectedComputer] : []),
+    ...bagItems.filter(isTransferable),
+  ];
 
   if (!isOpen) return null;
 
@@ -2519,72 +2555,227 @@ function TransferSystemModal({
             </Button>
           </div>
 
-          <div className="space-y-2">
-            <Label>System Color</Label>
-            <Select value={selectedColor} onValueChange={setSelectedColor}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a system..." />
-              </SelectTrigger>
-              <SelectContent>
-                {systemColors.map((color) => (
-                  <SelectItem key={color} value={color}>
-                    {color} System
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>New Location</Label>
-            <Select value={selectedLocation} onValueChange={setSelectedLocation}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a location..." />
-              </SelectTrigger>
-              <SelectContent>
-                {locationOptions.map((location) => (
-                  <SelectItem key={location} value={location}>
-                    {location}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Add Location</Label>
-            <div className="flex gap-2">
-              <Input
-                value={newLocation}
-                onChange={(event) => setNewLocation(event.target.value)}
-                placeholder="e.g. Containment Unit 1"
-              />
-              <Button
-                variant="outline"
-                onClick={() => {
-                  if (!newLocation.trim()) return;
-                  onAddLocation(newLocation);
-                  setSelectedLocation(newLocation.trim());
-                  setNewLocation("");
-                }}
-              >
-                Add
-              </Button>
+          {step === 1 ? (
+            <div className="space-y-4">
+              <Label>Choose Computer Color</Label>
+              <div className="grid grid-cols-2 gap-3">
+                {computerColors.map((color) => {
+                  const hasAvailable = equipment.some(
+                    (item) =>
+                      item.category === "Computer" &&
+                      item.systemColor === color &&
+                      isTransferable(item)
+                  );
+                  return (
+                    <Button
+                      key={color}
+                      variant="outline"
+                      className={cn(
+                        "h-16 text-base font-semibold border-2",
+                        hasAvailable ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
+                      )}
+                      onClick={() => {
+                        if (!hasAvailable) return;
+                        setSelectedComputerColor(color);
+                        setStep(2);
+                      }}
+                      disabled={!hasAvailable}
+                    >
+                      {color} Computer
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
+          ) : step === 2 ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Computer</span>
+                  <div className="font-bold text-lg text-primary">{selectedComputerColor}</div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
+                  Change
+                </Button>
+              </div>
+              <div className="space-y-4">
+                <Label>Select Bag Color</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {bagColors.map((color) => {
+                    const itemsForBag = equipment.filter(
+                      (item) =>
+                        item.category !== "Computer" &&
+                        (item.temporarySystemColor || item.systemColor) === color
+                    );
+                    const missingItems = itemsForBag.filter((item) => !isTransferable(item));
+                    const missingPreview = missingItems
+                      .slice(0, 2)
+                      .map((item) => `${item.name} (${getMissingLabel(item)})`)
+                      .join(", ");
+                    return (
+                      <Button
+                        key={color}
+                        variant="outline"
+                        className="h-20 text-left border-2 flex flex-col items-start justify-center gap-1"
+                        onClick={() => {
+                          setSelectedBagColor(color);
+                          setStep(3);
+                        }}
+                        disabled={itemsForBag.length === 0}
+                      >
+                        <span className="text-base font-semibold">{color} Bag</span>
+                        {missingItems.length > 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            Missing {missingItems.length}: {missingPreview}
+                            {missingItems.length > 2 ? "..." : ""}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">All items available</span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Transfer</span>
+                  <div className="font-bold text-lg text-primary">{selectedComputerColor} Computer</div>
+                  <div className="text-xs text-muted-foreground">{selectedBagColor} Bag</div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setStep(2)}>
+                  Change
+                </Button>
+              </div>
+
+              {missingBagItems.length > 0 && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+                  Missing from bag: {missingBagItems.map((item) => `${item.name} (${getMissingLabel(item)})`).join(", ")}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>New Location</Label>
+                <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a location..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {locationOptions.map((location) => (
+                      <SelectItem key={location} value={location}>
+                        {location}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Add Location</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newLocation}
+                    onChange={(event) => setNewLocation(event.target.value)}
+                    placeholder="e.g. Containment Unit 1"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (!newLocation.trim()) return;
+                      onAddLocation(newLocation);
+                      setSelectedLocation(newLocation.trim());
+                      setNewLocation("");
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => onTransfer(transferItems.map((item) => item.id), selectedLocation)}
+                  disabled={!selectedLocation || transferItems.length === 0}
+                >
+                  Transfer
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function ActivityLogModal({
+  isOpen,
+  onClose,
+  isLoading,
+  entries,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  isLoading: boolean;
+  entries: Array<{
+    id: string;
+    equipmentId: string;
+    action: string;
+    timestamp: string;
+    details?: string | null;
+    workOrder?: string | null;
+  }>;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Recent Activity</h2>
+              <p className="text-xs text-muted-foreground">Last 5 check in/out events</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
           </div>
 
-          <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              className="flex-1"
-              onClick={() => onTransfer(selectedColor, selectedLocation)}
-              disabled={!selectedColor || !selectedLocation}
-            >
-              Transfer
-            </Button>
-          </div>
+          {isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading activity...</div>
+          ) : entries.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No recent activity.</div>
+          ) : (
+            <div className="space-y-3">
+              {entries.map((entry) => {
+                const message = entry.details || entry.action;
+                const workOrder = entry.workOrder ? `WO ${entry.workOrder}` : "";
+                return (
+                  <div key={entry.id} className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                    <div className="font-medium">{message}</div>
+                    <div className="text-muted-foreground">
+                      {workOrder ? `${workOrder} · ` : ""}
+                      {format(new Date(entry.timestamp), "HH:mm dd/MM")}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </motion.div>
     </div>
@@ -2621,6 +2812,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
   const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [isActivityOpen, setIsActivityOpen] = useState(false);
+  const [recentHistory, setRecentHistory] = useState<Array<{
+    id: string;
+    equipmentId: string;
+    action: string;
+    timestamp: string;
+    details?: string | null;
+    workOrder?: string | null;
+  }>>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [locationFilter, setLocationFilter] = useState("Shop");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -2659,6 +2860,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     new Set(
       equipment
         .filter((item) => item.category !== "Computer" && item.systemColor)
+        .map((item) => item.systemColor as string)
+    )
+  );
+  const computerColorOptions = Array.from(
+    new Set(
+      equipment
+        .filter((item) => item.category === "Computer" && item.systemColor)
         .map((item) => item.systemColor as string)
     )
   );
@@ -2840,6 +3048,32 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   }, [customLocations]);
 
+  useEffect(() => {
+    if (!isActivityOpen) return;
+    let active = true;
+    setIsHistoryLoading(true);
+    api.equipment
+      .getRecentHistory(10)
+      .then((entries) => {
+        if (!active) return;
+        const filtered = entries.filter((entry) =>
+          entry.action === "check_in" || entry.action === "check_out"
+        );
+        setRecentHistory(filtered.slice(0, 5));
+      })
+      .catch(() => {
+        if (!active) return;
+        toast.error("Failed to load activity log.");
+      })
+      .finally(() => {
+        if (!active) return;
+        setIsHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isActivityOpen]);
+
   const handleAddLocation = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -2871,28 +3105,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
-  const handleTransferSystem = async (color: string, location: string) => {
-    if (!color || !location) return;
-    const itemsToMove = equipment.filter(
-      (item) =>
-        item.systemColor === color &&
-        item.status !== "checked_out" &&
-        (item.location ?? "Shop") !== "Repairs"
-    );
-
-    if (itemsToMove.length === 0) {
-      toast.error("No available items to move for that system.");
-      return;
-    }
-
+  const handleTransferSystem = async (itemIds: string[], location: string) => {
+    if (!itemIds.length || !location) return;
     try {
       await Promise.all(
-        itemsToMove.map((item) =>
-          api.equipment.update(item.id, { location })
+        itemIds.map((id) =>
+          api.equipment.update(id, { location })
         )
       );
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
-      toast.success(`${color} system moved to ${location}.`);
+      toast.success(`Transferred ${itemIds.length} item(s) to ${location}.`);
       setIsTransferOpen(false);
     } catch {
       toast.error("Failed to transfer system.");
@@ -2905,7 +3127,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   const isBagItemAvailable = (item: Equipment) =>
     item.status === "available" &&
-    (item.location ?? "Shop") === "Shop" &&
+    (item.location ?? "Shop") !== "Repairs" &&
     !item.temporarySystemColor;
 
   const getBagItemStatus = (item: Equipment) => {
@@ -3160,6 +3382,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
             
             <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setIsActivityOpen(true)}
+                  data-testid="button-activity-log"
+                >
+                  <History className="w-5 h-5" />
+                </Button>
                 {canManageEquipment && (
                   <Button 
                     variant="outline" 
@@ -3605,15 +3836,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Borrowed</h3>
                 <Badge variant="outline" className="text-[10px] font-mono">
-                  {equipment.filter((item) => item.temporarySystemColor).length}
+                  {equipment.filter((item) => item.swappedFromId).length}
                 </Badge>
               </div>
               <div className="space-y-1">
-                {equipment.filter((item) => item.temporarySystemColor).length === 0 ? (
+                {equipment.filter((item) => item.swappedFromId).length === 0 ? (
                   <div className="text-xs text-muted-foreground">No borrowed components.</div>
                 ) : (
                   equipment
-                    .filter((item) => item.temporarySystemColor)
+                    .filter((item) => item.swappedFromId)
                     .map((item) => (
                       <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
                         <span>
@@ -3663,11 +3894,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
         {/* Equipment List */}
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-lg font-semibold tracking-tight">Inventory</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <Select value={inventoryColorFilter} onValueChange={setInventoryColorFilter}>
-                    <SelectTrigger className="h-8 w-[180px] text-xs">
+                    <SelectTrigger className="h-8 w-full sm:w-[180px] text-xs overflow-hidden">
                       <SelectValue placeholder="Filter by system" />
                     </SelectTrigger>
                     <SelectContent>
@@ -3681,7 +3912,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </SelectContent>
                   </Select>
                   <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
-                    <SelectTrigger className="h-8 w-[180px] text-xs">
+                    <SelectTrigger className="h-8 w-full sm:w-[180px] text-xs overflow-hidden">
                       <SelectValue placeholder="Color bags" />
                     </SelectTrigger>
                     <SelectContent>
@@ -3810,10 +4041,20 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           <TransferSystemModal
             isOpen={isTransferOpen}
             onClose={() => setIsTransferOpen(false)}
-            systemColors={baseSystemColors}
+            equipment={equipment}
+            computerColors={computerColorOptions}
+            bagColors={bagColorOptions}
             locationOptions={locationOptions}
             onAddLocation={handleAddLocation}
             onTransfer={handleTransferSystem}
+          />
+        )}
+        {isActivityOpen && (
+          <ActivityLogModal
+            isOpen={isActivityOpen}
+            onClose={() => setIsActivityOpen(false)}
+            isLoading={isHistoryLoading}
+            entries={recentHistory}
           />
         )}
         {isBulkEditOpen && (

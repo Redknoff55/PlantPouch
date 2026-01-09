@@ -90,6 +90,11 @@ export const api = {
       if (!res.ok) throw new Error('Failed to checkin equipment');
       return res.json();
     },
+    getRecentHistory: async (limit = 5): Promise<Array<{ id: string; equipmentId: string; action: string; timestamp: string; details?: string | null; workOrder?: string | null }>> => {
+      const res = await fetch(`${API_BASE}/equipment/history/recent?limit=${limit}`);
+      if (!res.ok) throw new Error('Failed to fetch equipment history');
+      return res.json();
+    },
     swap: async (params: { brokenId: string; replacementId: string; context: 'broken' | 'checked_out'; reason?: string }): Promise<void> => {
       const res = await fetch(`${API_BASE}/equipment/swap`, {
         method: 'POST',

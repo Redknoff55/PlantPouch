@@ -10,7 +10,7 @@ import {
   systems as systemsTable
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Equipment CRUD
@@ -27,6 +27,7 @@ export interface IStorage {
   // Equipment History
   addEquipmentHistory(history: InsertEquipmentHistory): Promise<EquipmentHistory>;
   getEquipmentHistory(equipmentId: string): Promise<EquipmentHistory[]>;
+  getRecentEquipmentHistory(limit: number): Promise<EquipmentHistory[]>;
   
   // Systems CRUD
   getAllSystems(): Promise<System[]>;
@@ -92,6 +93,14 @@ export class DatabaseStorage implements IStorage {
       .from(equipmentHistoryTable)
       .where(eq(equipmentHistoryTable.equipmentId, equipmentId))
       .orderBy(equipmentHistoryTable.timestamp);
+  }
+
+  async getRecentEquipmentHistory(limit: number): Promise<EquipmentHistory[]> {
+    return await db
+      .select()
+      .from(equipmentHistoryTable)
+      .orderBy(desc(equipmentHistoryTable.timestamp))
+      .limit(limit);
   }
 
   async getAllSystems(): Promise<System[]> {

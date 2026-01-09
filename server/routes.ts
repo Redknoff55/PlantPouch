@@ -162,21 +162,21 @@ export async function registerRoutes(
 
           const updated = await storage.updateEquipment(item.id, {
             status: newStatus,
-            workOrder: undefined,
-            checkedOutBy: undefined,
-            checkedOutAt: undefined,
+            workOrder: null,
+            checkedOutBy: null,
+            checkedOutAt: null,
             notes,
           });
 
           if (item.temporarySystemColor) {
             await storage.updateEquipment(item.id, {
-              temporarySystemColor: undefined,
-              swappedFromId: undefined,
+              temporarySystemColor: null,
+              swappedFromId: null,
               status: 'available',
             });
             if (item.swappedFromId) {
               await storage.updateEquipment(item.swappedFromId, {
-                replacementId: undefined,
+                replacementId: null,
               });
             }
           }
@@ -254,21 +254,21 @@ export async function registerRoutes(
 
       const equipment = await storage.updateEquipment(req.params.id, {
         status: newStatus,
-        workOrder: undefined,
-        checkedOutBy: undefined,
-        checkedOutAt: undefined,
+        workOrder: null,
+        checkedOutBy: null,
+        checkedOutAt: null,
         notes: combinedNotes || undefined,
       });
 
       if (equipment?.temporarySystemColor) {
         await storage.updateEquipment(req.params.id, {
-          temporarySystemColor: undefined,
-          swappedFromId: undefined,
+          temporarySystemColor: null,
+          swappedFromId: null,
           status: 'available',
         });
         if (equipment.swappedFromId) {
           await storage.updateEquipment(equipment.swappedFromId, {
-            replacementId: undefined,
+            replacementId: null,
           });
         }
       }
@@ -315,9 +315,9 @@ export async function registerRoutes(
       await storage.updateEquipment(brokenId, {
         status: "broken",
         location: "Shop",
-        workOrder: undefined,
-        checkedOutBy: undefined,
-        checkedOutAt: undefined,
+        workOrder: null,
+        checkedOutBy: null,
+        checkedOutAt: null,
         replacementId: replacementId,
         notes: brokenNotes || undefined,
       });
@@ -365,6 +365,19 @@ export async function registerRoutes(
       res.json(history);
     } catch (error) {
       console.error("Error fetching history:", error);
+      res.status(500).json({ error: "Failed to fetch history" });
+    }
+  });
+
+  // Get recent equipment history
+  app.get("/api/equipment/history/recent", async (req, res) => {
+    try {
+      const limit = Number.parseInt(req.query.limit as string, 10);
+      const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 25) : 5;
+      const history = await storage.getRecentEquipmentHistory(safeLimit);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching recent history:", error);
       res.status(500).json({ error: "Failed to fetch history" });
     }
   });
