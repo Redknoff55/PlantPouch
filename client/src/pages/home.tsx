@@ -591,7 +591,7 @@ function ActionModal({
             if (isBroken && replacementId) {
               const replacementItem = replacementCandidates.find((item) => item.id === replacementId);
               if (replacementItem) {
-                onAssignReplacement(equipment, replacementItem);
+                onAssignReplacement(equipment, replacementItem, "broken");
               }
             }
           },
@@ -2334,7 +2334,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
   const canManageEquipment = adminEnabled && isAdminMode;
-  const [expandedPanels, setExpandedPanels] = useState({
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({
     good: false,
     broken: false,
     repairs: false,
@@ -2344,6 +2344,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
+  const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2541,7 +2542,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
   };
 
-  const togglePanel = (key: keyof typeof expandedPanels) => {
+  const togglePanel = (key: string) => {
     setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
@@ -2615,12 +2616,29 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
   };
 
-  const handleAssignReplacement = (brokenItem: Equipment, replacementItem: Equipment) => {
+  const handleAssignReplacement = (brokenItem: Equipment, replacementItem: Equipment, context: "broken" | "checked_out") => {
+    const replacementPayload: Partial<InsertEquipment> = {
+      temporarySystemColor: brokenItem.systemColor ?? undefined,
+      originalSystemColor: replacementItem.originalSystemColor || replacementItem.systemColor || undefined,
+      swappedFromId: brokenItem.id,
+    };
+
+    if (context === "checked_out") {
+      replacementPayload.status = "checked_out";
+      replacementPayload.workOrder = brokenItem.workOrder;
+      replacementPayload.checkedOutBy = brokenItem.checkedOutBy;
+      replacementPayload.checkedOutAt = brokenItem.checkedOutAt ? new Date(brokenItem.checkedOutAt) : new Date();
+    }
+
     updateEquipment.mutate(
       {
         id: brokenItem.id,
         data: {
           status: "broken",
+          location: "Shop",
+          workOrder: undefined,
+          checkedOutBy: undefined,
+          checkedOutAt: undefined,
           replacementId: replacementItem.id,
         },
       },
@@ -2629,11 +2647,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           updateEquipment.mutate(
             {
               id: replacementItem.id,
-              data: {
-                temporarySystemColor: brokenItem.systemColor ?? undefined,
-                originalSystemColor: replacementItem.originalSystemColor || replacementItem.systemColor || undefined,
-                swappedFromId: brokenItem.id,
-              },
+              data: replacementPayload,
             },
             {
               onSuccess: () => {
@@ -2681,6 +2695,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               data: {
                 temporarySystemColor: undefined,
                 swappedFromId: undefined,
+                status: "available",
+                workOrder: undefined,
+                checkedOutBy: undefined,
+                checkedOutAt: undefined,
               },
             },
             {
@@ -2883,6 +2901,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
                     : "-";
 
+                  const checkedKey = `checked-${group.key}`;
+                  const isExpanded = expandedPanels[checkedKey] ?? false;
                   return (
                     <div key={group.key} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
                       <div className="text-sm font-medium">{label}</div>
@@ -2893,7 +2913,41 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           </Badge>
                         )}
                         <span>{time}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setExpandedPanels((prev) => ({
+                              ...prev,
+                              [checkedKey]: !isExpanded,
+                            }));
+                          }}
+                        >
+                          {isExpanded ? "Hide" : "View"}
+                        </Button>
                       </div>
+                      {isExpanded && (
+                        <div className="w-full mt-2 space-y-2">
+                          {group.items.map((item) => (
+                            <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs">
+                              <span className="font-mono">{item.id}</span>
+                              <span className="flex-1 text-muted-foreground truncate">{item.name}</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px]"
+                                onClick={() => {
+                                  setSwapTarget(item);
+                                  setSwapContext("checked_out");
+                                  setIsSwapOpen(true);
+                                }}
+                              >
+                                Swap
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3007,10 +3061,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                                 variant="outline"
                                 size="sm"
                                 className="h-7 px-2 text-[10px]"
-                                onClick={() => {
-                                  setSwapTarget(item);
-                                  setIsSwapOpen(true);
-                                }}
+                              onClick={() => {
+                                setSwapTarget(item);
+                                setSwapContext("broken");
+                                setIsSwapOpen(true);
+                              }}
                               >
                                 Swap
                               </Button>
@@ -3205,7 +3260,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             replacementOptions={swapCandidates}
             onConfirm={(replacement) => {
               if (!swapTarget) return;
-              handleAssignReplacement(swapTarget, replacement);
+              handleAssignReplacement(swapTarget, replacement, swapContext);
               setIsSwapOpen(false);
             }}
           />
