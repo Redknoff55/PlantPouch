@@ -83,6 +83,7 @@ function EquipmentListItem({
   onToggleSelect?: (id: string) => void;
 }) {
   const isBroken = item.status === 'broken';
+  const effectiveSystemColor = item.temporarySystemColor || item.systemColor;
 
   return (
     <motion.div
@@ -104,9 +105,9 @@ function EquipmentListItem({
               />
             )}
             <Box className="w-4 h-4 text-muted-foreground shrink-0" />
-            {item.systemColor && (
+            {effectiveSystemColor && (
               <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
-                {item.systemColor} Sys
+                {effectiveSystemColor} Sys
               </Badge>
             )}
           </div>
@@ -534,6 +535,8 @@ function ActionModal({
   locationOptions,
   systemColorOptions,
   onAddLocation,
+  onAssignReplacement,
+  replacementCandidates,
 }: { 
   equipment: Equipment | null; 
   isOpen: boolean; 
@@ -542,6 +545,8 @@ function ActionModal({
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
+  onAssignReplacement: (brokenItem: Equipment, replacementItem: Equipment) => void;
+  replacementCandidates: Equipment[];
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
@@ -557,6 +562,7 @@ function ActionModal({
   // Checkin State
   const [notes, setNotes] = useState("");
   const [isBroken, setIsBroken] = useState(false);
+  const [replacementId, setReplacementId] = useState("");
 
   if (!isOpen || !equipment) return null;
 
@@ -578,7 +584,19 @@ function ActionModal({
       }
       checkout.mutate({ id: equipment.id, workOrder, techName: techName.trim() });
     } else {
-      checkin.mutate({ id: equipment.id, notes, isBroken });
+      checkin.mutate(
+        { id: equipment.id, notes, isBroken },
+        {
+          onSuccess: () => {
+            if (isBroken && replacementId) {
+              const replacementItem = replacementCandidates.find((item) => item.id === replacementId);
+              if (replacementItem) {
+                onAssignReplacement(equipment, replacementItem);
+              }
+            }
+          },
+        }
+      );
     }
     onClose();
     // Reset state
@@ -586,6 +604,7 @@ function ActionModal({
     setTechName("");
     setNotes("");
     setIsBroken(false);
+    setReplacementId("");
   };
 
   useEffect(() => {
@@ -780,6 +799,23 @@ function ActionModal({
                                     className="data-[state=checked]:bg-destructive"
                                 />
                             </div>
+                            {isBroken && (
+                              <div className="space-y-2">
+                                <Label>Replacement Component (Optional)</Label>
+                                <Select value={replacementId} onValueChange={setReplacementId}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select replacement..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {replacementCandidates.map((item) => (
+                                      <SelectItem key={item.id} value={item.id}>
+                                        {item.id} - {item.systemColor ?? "Unassigned"} - {item.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
                             <Button 
                                 className={cn("w-full h-12 text-lg font-semibold", isBroken ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : "")}
                                 size="lg"
@@ -838,13 +874,15 @@ function SystemCheckoutModal({
   };
   
   // Get items for the selected system
-  const systemItems = equipment.filter(e => e.systemColor === selectedColor);
+  const systemItems = equipment.filter(
+    (e) => (e.temporarySystemColor || e.systemColor) === selectedColor
+  );
 
   const handleColorSelect = (color: string) => {
     setSelectedColor(color);
     // Initialize verified items with the default system items
     const initialVerified: Record<string, string> = {};
-    equipment.filter(e => e.systemColor === color).forEach(e => {
+    equipment.filter(e => (e.temporarySystemColor || e.systemColor) === color).forEach(e => {
       initialVerified[e.id] = e.id;
     });
     setVerifiedItems(initialVerified);
@@ -938,14 +976,16 @@ function SystemCheckoutModal({
                  <div className="space-y-3">
                     {systemItems.map(item => {
                         const currentSelectedId = verifiedItems[item.id];
-                        const isOriginal = currentSelectedId === item.id;
+                        const isOriginal = currentSelectedId === item.id && !item.temporarySystemColor;
                         const selectedItem = equipment.find(e => e.id === currentSelectedId);
                         
                         // Find potential replacements (same category, available, not already in this system)
                         const replacements = equipment.filter(e => 
                             e.category === item.category && 
                             e.status === 'available' && 
-                            e.id !== item.id
+                            e.id !== item.id &&
+                            !e.temporarySystemColor &&
+                            (e.location ?? "Shop") === "Shop"
                         );
 
                         return (
@@ -1274,6 +1314,7 @@ function AddEquipmentModal({
       name: formData.name,
       category: formData.category,
       systemColor: formData.systemColor || undefined,
+      originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
       status: 'available'
     }, {
@@ -1461,6 +1502,7 @@ function AdminBarcodeScannerModal({
         name: parsed.name,
         category: parsed.category,
         systemColor: parsed.systemColor || undefined,
+        originalSystemColor: parsed.systemColor || undefined,
         location: formData.location || "Shop",
         status: 'available'
       }, {
@@ -1509,6 +1551,7 @@ function AdminBarcodeScannerModal({
       name: formData.name,
       category: formData.category,
       systemColor: formData.systemColor || undefined,
+      originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
       status: 'available'
     });
@@ -1966,6 +2009,7 @@ function AdminImportModal({
         name: name.trim(),
         category: category.trim(),
         systemColor: systemColor?.trim() || undefined,
+        originalSystemColor: systemColor?.trim() || undefined,
         location: location?.trim() || "Shop",
         status: "available"
       });
@@ -2195,6 +2239,85 @@ function BulkEditModal({
   );
 }
 
+function SwapModal({
+  isOpen,
+  onClose,
+  brokenItem,
+  replacementOptions,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  brokenItem: Equipment | null;
+  replacementOptions: Equipment[];
+  onConfirm: (replacement: Equipment) => void;
+}) {
+  const [selectedId, setSelectedId] = useState("");
+
+  if (!isOpen || !brokenItem) return null;
+
+  useEffect(() => {
+    setSelectedId("");
+  }, [brokenItem?.id, isOpen]);
+
+  const selected = replacementOptions.find((item) => item.id === selectedId);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.98, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Swap Component</h2>
+              <p className="text-xs text-muted-foreground">
+                {brokenItem.id} ({brokenItem.systemColor}) - {brokenItem.category}
+              </p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Replacement Component</Label>
+            <Select value={selectedId} onValueChange={setSelectedId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select replacement..." />
+              </SelectTrigger>
+              <SelectContent>
+                {replacementOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.id} - {option.systemColor ?? "Unassigned"} - {option.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => selected && onConfirm(selected)}
+              disabled={!selected}
+            >
+              Confirm Swap
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
   const adminEnabled = mode === "admin";
@@ -2219,6 +2342,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
+  const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2248,7 +2373,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const systemColorOptions = Array.from(
     new Set(
       equipment
-        .map((item) => item.systemColor)
+        .flatMap((item) => [item.systemColor, item.temporarySystemColor])
         .filter((color): color is string => !!color && color.trim().length > 0)
     )
   );
@@ -2258,15 +2383,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .filter((item) => item.status === "checked_out")
       .reduce((acc, item) => {
         const tech = item.checkedOutBy || "Unknown tech";
-        const workOrder = item.workOrder || "—";
-        const key = item.systemColor
-          ? `system:${item.systemColor}:${workOrder}:${tech}`
+        const workOrder = item.workOrder || "-";
+        const effectiveColor = item.temporarySystemColor || item.systemColor;
+        const key = effectiveColor
+          ? `system:${effectiveColor}:${workOrder}:${tech}`
           : `item:${item.id}`;
 
         if (!acc[key]) {
           acc[key] = {
             key,
-            systemColor: item.systemColor || null,
+            systemColor: effectiveColor || null,
             tech,
             workOrder,
             items: [],
@@ -2296,9 +2422,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       }, {} as Record<string, { color: string; items: Equipment[] }>)
   );
 
-  const goodSystemsInShop = systemsByColor.filter((system) =>
-    system.items.every((item) => item.status === "available" && getLocation(item) === "Shop")
-  );
+  const activeComponentsForSystem = (color: string) =>
+    equipment.filter(
+      (item) =>
+        (item.temporarySystemColor || item.systemColor) === color &&
+        item.status === "available" &&
+        getLocation(item) === "Shop"
+    );
+
+  const goodSystemsInShop = systemsByColor.filter((system) => {
+    const expectedCount = system.items.length;
+    const activeCount = activeComponentsForSystem(system.color).length;
+    return activeCount >= expectedCount;
+  });
 
   const brokenSystems = systemsByColor.filter((system) =>
     system.items.some((item) => item.status === "broken")
@@ -2308,10 +2444,26 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     system.items.some((item) => getLocation(item) === "Repairs")
   );
 
+  const getReplacementLabel = (item: Equipment) => {
+    if (!item.replacementId) return "";
+    const replacement = equipment.find((entry) => entry.id === item.replacementId);
+    if (!replacement) return item.replacementId;
+    const color = replacement.originalSystemColor || replacement.systemColor || "Unassigned";
+    return `${replacement.id} (${color})`;
+  };
+
+  const getSwapSummary = (color: string) => {
+    const replacements = equipment.filter((item) => item.temporarySystemColor === color);
+    if (!replacements.length) return "";
+    return replacements
+      .map((item) => `${item.originalSystemColor || item.systemColor || "Unassigned"} ${item.id}`)
+      .join(", ");
+  };
+
   const groupItemsBySystem = (items: Equipment[]) =>
     Object.values(
       items.reduce((acc, item) => {
-        const key = item.systemColor || "Unassigned";
+        const key = item.temporarySystemColor || item.systemColor || "Unassigned";
         if (!acc[key]) {
           acc[key] = { color: key, items: [] as Equipment[] };
         }
@@ -2321,7 +2473,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
 
   const goodSystemItems = groupItemsBySystem(
-    goodSystemsInShop.flatMap((system) => system.items)
+    goodSystemsInShop.flatMap((system) => activeComponentsForSystem(system.color))
   );
   const brokenItems = groupItemsBySystem(
     equipment.filter((item) => item.status === "broken")
@@ -2338,6 +2490,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       item.name,
       item.category,
       item.systemColor ?? "",
+      item.temporarySystemColor ?? "",
+      item.originalSystemColor ?? "",
       item.location ?? "",
       item.status,
     ]
@@ -2345,6 +2499,25 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .toLowerCase()
       .includes(normalizedSearch);
   });
+
+  const getReplacementCandidates = (target: Equipment) =>
+    equipment.filter((item) => {
+      if (item.id === target.id) return false;
+      if (item.status !== "available") return false;
+      if (item.temporarySystemColor) return false;
+      if (getLocation(item) !== "Shop") return false;
+      return item.category === target.category;
+    });
+
+  const swapCandidates = swapTarget
+    ? equipment.filter((item) => {
+        if (item.id === swapTarget.id) return false;
+        if (item.status !== "available") return false;
+        if (item.temporarySystemColor) return false;
+        if (getLocation(item) !== "Shop") return false;
+        return item.category === swapTarget.category;
+      })
+    : [];
 
   useEffect(() => {
     try {
@@ -2442,7 +2615,48 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
   };
 
+  const handleAssignReplacement = (brokenItem: Equipment, replacementItem: Equipment) => {
+    updateEquipment.mutate(
+      {
+        id: brokenItem.id,
+        data: {
+          status: "broken",
+          replacementId: replacementItem.id,
+        },
+      },
+      {
+        onSuccess: () => {
+          updateEquipment.mutate(
+            {
+              id: replacementItem.id,
+              data: {
+                temporarySystemColor: brokenItem.systemColor ?? undefined,
+                originalSystemColor: replacementItem.originalSystemColor || replacementItem.systemColor || undefined,
+                swappedFromId: brokenItem.id,
+              },
+            },
+            {
+              onSuccess: () => {
+                toast.success(`${replacementItem.id} swapped into ${brokenItem.systemColor} system.`);
+              },
+              onError: (error) => {
+                toast.error(`Failed to update ${replacementItem.id}: ${error.message}`);
+              },
+            }
+          );
+        },
+        onError: (error) => {
+          toast.error(`Failed to update ${brokenItem.id}: ${error.message}`);
+        },
+      }
+    );
+  };
+
   const handleReturnFromRepairs = (item: Equipment) => {
+    const replacement = item.replacementId
+      ? equipment.find((entry) => entry.id === item.replacementId)
+      : undefined;
+
     updateEquipment.mutate(
       {
         id: item.id,
@@ -2452,11 +2666,32 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           workOrder: undefined,
           checkedOutBy: undefined,
           checkedOutAt: undefined,
+          replacementId: undefined,
         },
       },
       {
         onSuccess: () => {
-          toast.success(`${item.id} returned to shop.`);
+          if (!replacement) {
+            toast.success(`${item.id} returned to shop.`);
+            return;
+          }
+          updateEquipment.mutate(
+            {
+              id: replacement.id,
+              data: {
+                temporarySystemColor: undefined,
+                swappedFromId: undefined,
+              },
+            },
+            {
+              onSuccess: () => {
+                toast.success(`${item.id} returned to shop. ${replacement.id} restored.`);
+              },
+              onError: (error) => {
+                toast.error(`Failed to restore ${replacement.id}: ${error.message}`);
+              },
+            }
+          );
         },
         onError: (error) => {
           toast.error(`Failed to update ${item.id}: ${error.message}`);
@@ -2635,12 +2870,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <div className="space-y-2">
                 {checkedOutGroups.map((group) => {
                   const sample = group.items[0];
+                  const replacementLabels = equipment
+                    .filter((item) => item.temporarySystemColor === group.systemColor)
+                    .map((item) => `${item.originalSystemColor || item.systemColor || "Unassigned"} ${item.name} ${item.id}`);
+                  const replacementSuffix = replacementLabels.length
+                    ? ` (${replacementLabels.join(", ")})`
+                    : "";
                   const label = group.systemColor
-                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}`
+                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}${replacementSuffix}`
                     : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}`;
                   const time = sample?.checkedOutAt
                     ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
-                    : "—";
+                    : "-";
 
                   return (
                     <div key={group.key} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
@@ -2679,11 +2920,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 <div className="text-xs text-muted-foreground">No complete systems ready.</div>
               ) : (
                 <div className="space-y-1">
-                  {goodSystemsInShop.map((system) => (
-                    <div key={system.color} className="text-xs font-medium">
-                      {system.color} System ({system.items.length})
-                    </div>
-                  ))}
+                  {goodSystemsInShop.map((system) => {
+                    const swapSummary = getSwapSummary(system.color);
+                    return (
+                      <div key={system.color} className="text-xs font-medium">
+                        {system.color} System ({system.items.length})
+                        {swapSummary ? ` - swapped: ${swapSummary}` : ""}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {expandedPanels.good && (
@@ -2696,7 +2941,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           <span className="font-mono">{item.id}</span>
                           <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
                           <span className="text-muted-foreground">
-                            {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "—"}
+                            {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "-"}
                           </span>
                         </div>
                       ))}
@@ -2708,7 +2953,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Broken Systems</h3>
+                <h3 className="text-sm font-semibold">Broken Components</h3>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {brokenSystems.length}
@@ -2719,7 +2964,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 </div>
               </div>
               {brokenSystems.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No broken systems.</div>
+                <div className="text-xs text-muted-foreground">No broken components.</div>
               ) : (
                 <div className="space-y-1">
                   {brokenSystems.map((system) => (
@@ -2735,17 +2980,47 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     <div key={group.color} className="space-y-1">
                       <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
                       {group.items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
-                          <span className="font-mono">{item.id}</span>
-                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-[10px]"
-                            onClick={() => handleSendToRepairs(item)}
-                          >
-                            Send to Repairs
-                          </Button>
+                        <div key={item.id} className="flex flex-col gap-1 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono">{item.id}</span>
+                            <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px]"
+                                onClick={() => handleSendToRepairs(item)}
+                              >
+                                Send to Repairs
+                              </Button>
+                              {getLocation(item) === "Repairs" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={() => handleReturnFromRepairs(item)}
+                                >
+                                  Is it back?
+                                </Button>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px]"
+                                onClick={() => {
+                                  setSwapTarget(item);
+                                  setIsSwapOpen(true);
+                                }}
+                              >
+                                Swap
+                              </Button>
+                            </div>
+                          </div>
+                          {item.replacementId && (
+                            <div className="text-[10px] text-muted-foreground">
+                              Swapped with {getReplacementLabel(item)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -2922,6 +3197,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             onDelete={handleBulkDelete}
           />
         )}
+        {isSwapOpen && (
+          <SwapModal
+            isOpen={isSwapOpen}
+            onClose={() => setIsSwapOpen(false)}
+            brokenItem={swapTarget}
+            replacementOptions={swapCandidates}
+            onConfirm={(replacement) => {
+              if (!swapTarget) return;
+              handleAssignReplacement(swapTarget, replacement);
+              setIsSwapOpen(false);
+            }}
+          />
+        )}
         {selectedEquipmentId && (
             <ActionModal 
                 equipment={selectedEquipment || null} 
@@ -2931,6 +3219,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 locationOptions={locationOptions}
                 systemColorOptions={systemColorOptions}
                 onAddLocation={handleAddLocation}
+                onAssignReplacement={handleAssignReplacement}
+                replacementCandidates={selectedEquipment ? getReplacementCandidates(selectedEquipment) : []}
             />
         )}
       </AnimatePresence>
