@@ -855,8 +855,10 @@ function SystemCheckoutModal({
 }) {
   const { data: equipment = [] } = useEquipment();
   const checkoutSystem = useCheckoutSystem();
-  const [step, setStep] = useState<1 | 2>(1);
-  const [selectedColor, setSelectedColor] = useState<string>("");
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [selectedComputerColor, setSelectedComputerColor] = useState<string>("");
+  const [selectedBagColor, setSelectedBagColor] = useState<string>("");
+  const [selectedComputerId, setSelectedComputerId] = useState<string>("");
   const [workOrder, setWorkOrder] = useState("");
   const [techName, setTechName] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
@@ -867,8 +869,27 @@ function SystemCheckoutModal({
   const [verifiedItems, setVerifiedItems] = useState<Record<string, string>>({});
   const [issues, setIssues] = useState<Record<string, string>>({});
 
+  const isItemAvailable = (item: Equipment) =>
+    item.status === "available" &&
+    (item.location ?? "Shop") === "Shop" &&
+    !item.temporarySystemColor;
+
   // Get unique system colors
   const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
+  const computerColors = Array.from(
+    new Set(
+      equipment
+        .filter((item) => item.category === "Computer" && item.systemColor)
+        .map((item) => item.systemColor as string)
+    )
+  );
+  const bagColors = Array.from(
+    new Set(
+      equipment
+        .filter((item) => item.category !== "Computer" && item.systemColor)
+        .map((item) => item.systemColor as string)
+    )
+  );
   const systemLocationSummary = systemColors.map((color) => {
     const items = equipment.filter((item) => item.systemColor === color);
     const uniqueLocations = Array.from(
@@ -886,20 +907,57 @@ function SystemCheckoutModal({
     Green: "bg-green-500",
   };
   
-  // Get items for the selected system
-  const systemItems = equipment.filter(
-    (e) => (e.temporarySystemColor || e.systemColor) === selectedColor
+  const bagItems = equipment.filter(
+    (item) =>
+      item.category !== "Computer" &&
+      (item.temporarySystemColor || item.systemColor) === selectedBagColor
   );
+  const selectedComputer = equipment.find((item) => item.id === selectedComputerId);
+  const combinedItems = [
+    ...(selectedComputer ? [selectedComputer] : []),
+    ...bagItems,
+  ];
 
-  const handleColorSelect = (color: string) => {
-    setSelectedColor(color);
-    // Initialize verified items with the default system items
-    const initialVerified: Record<string, string> = {};
-    equipment.filter(e => (e.temporarySystemColor || e.systemColor) === color).forEach(e => {
-      initialVerified[e.id] = e.id;
-    });
-    setVerifiedItems(initialVerified);
+  const handleComputerSelect = (color: string) => {
+    const candidates = equipment.filter(
+      (item) =>
+        item.category === "Computer" &&
+        item.systemColor === color &&
+        isItemAvailable(item)
+    );
+    if (candidates.length === 0) return;
+    setSelectedComputerColor(color);
+    setSelectedComputerId(candidates[0].id);
     setStep(2);
+  };
+
+  const getMissingLabel = (item: Equipment) => {
+    if (item.location === "Repairs") return "repairs";
+    if (item.status === "broken") return "broken";
+    if (item.status === "checked_out") return "checked out";
+    if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
+    if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
+    return "missing";
+  };
+
+  const missingBagItems = bagItems.filter((item) => !isItemAvailable(item));
+
+  const handleBagSelect = (color: string) => {
+    const initialVerified: Record<string, string> = {};
+    const items = equipment.filter(
+      (item) =>
+        item.category !== "Computer" &&
+        (item.temporarySystemColor || item.systemColor) === color
+    );
+    if (selectedComputer) {
+      initialVerified[selectedComputer.id] = selectedComputer.id;
+    }
+    items.forEach((item) => {
+      initialVerified[item.id] = isItemAvailable(item) ? item.id : "";
+    });
+    setSelectedBagColor(color);
+    setVerifiedItems(initialVerified);
+    setStep(3);
   };
 
   const handleSwap = (originalId: string, newItemId: string) => {
@@ -913,9 +971,9 @@ function SystemCheckoutModal({
     if (!workOrder || !techName.trim()) return;
     
     // Collect all final IDs to checkout
-    const finalIds = Object.values(verifiedItems);
+    const finalIds = Object.values(verifiedItems).filter((id) => !!id);
     
-    checkoutSystem.mutate({ systemColor: selectedColor, equipmentIds: finalIds, workOrder, techName: techName.trim() });
+    checkoutSystem.mutate({ systemColor: selectedComputerColor, equipmentIds: finalIds, workOrder, techName: techName.trim() });
     onClose();
   };
 
@@ -951,15 +1009,14 @@ function SystemCheckoutModal({
         <div className="p-6 overflow-y-auto flex-1">
           {step === 1 ? (
             <div className="space-y-4">
-              <Label>Select System Color</Label>
+              <Label>Choose Computer Color</Label>
               <div className="grid grid-cols-2 gap-3">
-                {systemColors.map(color => {
-                    // Check if we have items for this color
-                    const hasItems = systemColors.includes(color);
-                    const hasActiveCheckout = equipment.some(
+                {computerColors.map(color => {
+                    const hasAvailableComputer = equipment.some(
                       (item) =>
-                        (item.temporarySystemColor || item.systemColor) === color &&
-                        item.status === "checked_out"
+                        item.category === "Computer" &&
+                        item.systemColor === color &&
+                        isItemAvailable(item)
                     );
                     const locationLabel =
                       systemLocationSummary.find((entry) => entry.color === color)?.location ?? "Shop";
@@ -969,40 +1026,98 @@ function SystemCheckoutModal({
                             variant="outline"
                             className={cn(
                                 "h-24 text-lg font-semibold border-2 relative overflow-hidden flex flex-col items-start justify-center gap-1",
-                                hasItems && !hasActiveCheckout
+                                hasAvailableComputer
                                   ? "hover:border-primary hover:bg-primary/5"
                                   : "opacity-50 cursor-not-allowed"
                             )}
-                            onClick={() => hasItems && !hasActiveCheckout && handleColorSelect(color)}
-                            disabled={!hasItems || hasActiveCheckout}
+                            onClick={() => hasAvailableComputer && handleComputerSelect(color)}
+                            disabled={!hasAvailableComputer}
                         >
                             <div className={cn("absolute inset-y-0 left-0 w-2", colorClassMap[color] ?? "bg-foreground/20")} />
-                            <span>{color} System{hasActiveCheckout ? " (Checked Out)" : ""}</span>
+                            <span>{color} Computer</span>
                             <span className="text-xs text-muted-foreground">Location: {locationLabel}</span>
                         </Button>
                     );
                 })}
               </div>
             </div>
+          ) : step === 2 ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
+                <div>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Computer</span>
+                  <div className="font-bold text-lg text-primary">{selectedComputerColor}</div>
+                  {selectedComputer && (
+                    <div className="text-xs text-muted-foreground font-mono">{selectedComputer.id}</div>
+                  )}
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => setStep(1)}>Change</Button>
+              </div>
+
+              <div className="space-y-4">
+                <Label>Select Bag Color</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  {bagColors.map(color => {
+                    const itemsForBag = equipment.filter(
+                      (item) =>
+                        item.category !== "Computer" &&
+                        (item.temporarySystemColor || item.systemColor) === color
+                    );
+                    const missingItems = itemsForBag.filter((item) => !isItemAvailable(item));
+                    const missingPreview = missingItems
+                      .slice(0, 2)
+                      .map((item) => `${item.name} (${getMissingLabel(item)})`)
+                      .join(", ");
+                    return (
+                      <Button
+                        key={color}
+                        variant="outline"
+                        className="h-24 text-left border-2 flex flex-col items-start justify-center gap-1"
+                        onClick={() => handleBagSelect(color)}
+                        disabled={itemsForBag.length === 0}
+                      >
+                        <span className="text-base font-semibold">{color} Bag</span>
+                        {missingItems.length > 0 ? (
+                          <span className="text-xs text-muted-foreground">
+                            Missing {missingItems.length}: {missingPreview}
+                            {missingItems.length > 2 ? "..." : ""}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">All items available</span>
+                        )}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="space-y-6">
                <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border">
                   <div>
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">System</span>
-                    <div className="font-bold text-lg text-primary">{selectedColor}</div>
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Checkout</span>
+                    <div className="font-bold text-lg text-primary">{selectedComputerColor} Computer</div>
+                    <div className="text-xs text-muted-foreground">{selectedBagColor} Bag</div>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => setStep(1)}>Change</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setStep(2)}>Change</Button>
                </div>
 
+               {missingBagItems.length > 0 && (
+                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+                   Missing from bag: {missingBagItems.map((item) => `${item.name} (${getMissingLabel(item)})`).join(", ")}
+                 </div>
+               )}
+
                <div className="space-y-4">
-                 <Label>System Verification Checklist</Label>
+                 <Label>Bag Components</Label>
                  <div className="space-y-3">
-                    {systemItems.map(item => {
+                    {combinedItems.map(item => {
                         const currentSelectedId = verifiedItems[item.id];
-                        const isOriginal = currentSelectedId === item.id && !item.temporarySystemColor;
+                        const isAvailable = isItemAvailable(item);
+                        const isOriginal = currentSelectedId === item.id && isAvailable;
                         const selectedItem = equipment.find(e => e.id === currentSelectedId);
                         
-                        // Find potential replacements (same category, available, not already in this system)
+                        // Find potential replacements (same category, available, not already borrowed)
                         const replacements = equipment.filter(e => 
                             e.category === item.category && 
                             e.status === 'available' && 
@@ -1015,7 +1130,7 @@ function SystemCheckoutModal({
                             <div key={item.id} className="p-4 rounded-lg border border-border bg-card space-y-3">
                                 <div className="flex items-start gap-3">
                                     <Checkbox 
-                                        checked={true} // Always checked as we are verifying the slot
+                                        checked={true}
                                         className="mt-1"
                                     />
                                     <div className="flex-1">
@@ -1026,12 +1141,13 @@ function SystemCheckoutModal({
                                             </Badge>
                                         </div>
                                         
-                                        {isOriginal ? (
-                                            <div className="text-sm text-muted-foreground">{item.name} <span className="font-mono text-xs opacity-70">({item.id})</span></div>
+                                        {currentSelectedId ? (
+                                            <div className="text-sm text-muted-foreground">
+                                              {selectedItem?.name} <span className="font-mono text-xs opacity-70">({selectedItem?.id})</span>
+                                            </div>
                                         ) : (
-                                            <div className="text-sm text-primary font-medium flex items-center gap-1">
-                                                <RefreshCw className="w-3 h-3" />
-                                                Swapped: {selectedItem?.name} ({selectedItem?.id})
+                                            <div className="text-sm text-amber-600">
+                                              Missing: {item.name} ({getMissingLabel(item)})
                                             </div>
                                         )}
                                     </div>
@@ -1044,13 +1160,15 @@ function SystemCheckoutModal({
                                         value={currentSelectedId} 
                                         onValueChange={(val) => handleSwap(item.id, val)}
                                     >
-                                        <SelectTrigger className="h-8 w-[200px] text-xs">
+                                        <SelectTrigger className="h-8 w-[220px] text-xs">
                                             <SelectValue placeholder="Select equipment" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value={item.id}>
+                                            {isAvailable && (
+                                              <SelectItem value={item.id}>
                                                 Original: {item.name} ({item.id})
-                                            </SelectItem>
+                                              </SelectItem>
+                                            )}
                                             {replacements.map(rep => (
                                                 <SelectItem key={rep.id} value={rep.id}>
                                                     Available: {rep.name} ({rep.id})
@@ -1094,7 +1212,7 @@ function SystemCheckoutModal({
                   <Button 
                     className="w-full h-12 text-lg font-bold" 
                     onClick={handleSubmit}
-                    disabled={!workOrder || !techName.trim()}
+                    disabled={!workOrder || !techName.trim() || !selectedComputerId}
                   >
                     Check Out System
                   </Button>
