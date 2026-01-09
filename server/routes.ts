@@ -274,6 +274,57 @@ export async function registerRoutes(
     }
   });
 
+  // Swap equipment component
+  app.post("/api/equipment/swap", async (req, res) => {
+    try {
+      const { brokenId, replacementId, context } = req.body as {
+        brokenId?: string;
+        replacementId?: string;
+        context?: "broken" | "checked_out";
+      };
+
+      if (!brokenId || !replacementId) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const brokenItem = await storage.getEquipment(brokenId);
+      const replacementItem = await storage.getEquipment(replacementId);
+
+      if (!brokenItem || !replacementItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+
+      await storage.updateEquipment(brokenId, {
+        status: "broken",
+        location: "Shop",
+        workOrder: undefined,
+        checkedOutBy: undefined,
+        checkedOutAt: undefined,
+        replacementId: replacementId,
+      });
+
+      const replacementPayload: Partial<InsertEquipment> = {
+        temporarySystemColor: brokenItem.systemColor ?? undefined,
+        originalSystemColor: replacementItem.originalSystemColor || replacementItem.systemColor || undefined,
+        swappedFromId: brokenId,
+      };
+
+      if (context === "checked_out") {
+        replacementPayload.status = "checked_out";
+        replacementPayload.workOrder = brokenItem.workOrder || undefined;
+        replacementPayload.checkedOutBy = brokenItem.checkedOutBy || undefined;
+        replacementPayload.checkedOutAt = brokenItem.checkedOutAt ?? new Date();
+      }
+
+      await storage.updateEquipment(replacementId, replacementPayload);
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error swapping equipment:", error);
+      res.status(500).json({ error: "Failed to swap equipment" });
+    }
+  });
+
   // Get equipment history
   app.get("/api/equipment/:id/history", async (req, res) => {
     try {

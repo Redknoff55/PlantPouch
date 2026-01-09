@@ -2630,54 +2630,23 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
   };
 
-  const handleAssignReplacement = (brokenItem: Equipment, replacementItem: Equipment, context: "broken" | "checked_out") => {
-    const replacementPayload: Partial<InsertEquipment> = {
-      temporarySystemColor: brokenItem.systemColor ?? undefined,
-      originalSystemColor: replacementItem.originalSystemColor || replacementItem.systemColor || undefined,
-      swappedFromId: brokenItem.id,
-    };
-
-    if (context === "checked_out") {
-      replacementPayload.status = "checked_out";
-      replacementPayload.workOrder = brokenItem.workOrder;
-      replacementPayload.checkedOutBy = brokenItem.checkedOutBy;
-      replacementPayload.checkedOutAt = brokenItem.checkedOutAt ? new Date(brokenItem.checkedOutAt) : new Date();
+  const handleAssignReplacement = async (
+    brokenItem: Equipment,
+    replacementItem: Equipment,
+    context: "broken" | "checked_out"
+  ) => {
+    try {
+      await api.equipment.swap({
+        brokenId: brokenItem.id,
+        replacementId: replacementItem.id,
+        context,
+      });
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`${replacementItem.id} swapped into ${brokenItem.systemColor} system.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to swap equipment";
+      toast.error(message);
     }
-
-    updateEquipment.mutate(
-      {
-        id: brokenItem.id,
-        data: {
-          status: "broken",
-          location: "Shop",
-          workOrder: undefined,
-          checkedOutBy: undefined,
-          checkedOutAt: undefined,
-          replacementId: replacementItem.id,
-        },
-      },
-      {
-        onSuccess: () => {
-          updateEquipment.mutate(
-            {
-              id: replacementItem.id,
-              data: replacementPayload,
-            },
-            {
-              onSuccess: () => {
-                toast.success(`${replacementItem.id} swapped into ${brokenItem.systemColor} system.`);
-              },
-              onError: (error) => {
-                toast.error(`Failed to update ${replacementItem.id}: ${error.message}`);
-              },
-            }
-          );
-        },
-        onError: (error) => {
-          toast.error(`Failed to update ${brokenItem.id}: ${error.message}`);
-        },
-      }
-    );
   };
 
   const handleReturnFromRepairs = (item: Equipment) => {
