@@ -114,7 +114,10 @@ function EquipmentListItem({
           <h3 className={cn("font-semibold text-lg transition-colors", isBroken ? "text-destructive" : "text-foreground group-hover:text-primary")}>
             {item.name}
           </h3>
-          <p className="text-sm text-muted-foreground">{item.category}</p>
+          <div className="text-sm text-muted-foreground flex items-center gap-2">
+            <span>{item.category}</span>
+            <span className="text-xs font-mono">{item.id}</span>
+          </div>
         </div>
         {item.status === 'checked_out' && (
           <div className="text-right">
@@ -2701,6 +2704,33 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
   };
 
+  const handleReturnBorrowed = async (borrowedItem: Equipment) => {
+    const brokenItem = borrowedItem.swappedFromId
+      ? equipment.find((entry) => entry.id === borrowedItem.swappedFromId)
+      : undefined;
+    try {
+      await api.equipment.update(borrowedItem.id, {
+        temporarySystemColor: undefined,
+        swappedFromId: undefined,
+        status: "available",
+        workOrder: undefined,
+        checkedOutBy: undefined,
+        checkedOutAt: undefined,
+      });
+      if (brokenItem) {
+        await api.equipment.update(brokenItem.id, {
+          replacementId: undefined,
+          status: "available",
+          location: "Shop",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`${borrowedItem.id} returned to original system.`);
+    } catch {
+      toast.error("Failed to return borrowed component.");
+    }
+  };
+
   const handleResetBranding = () => {
     setBrandingState(branding);
     try {
@@ -3128,8 +3158,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   equipment
                     .filter((item) => item.temporarySystemColor)
                     .map((item) => (
-                      <div key={item.id} className="text-xs font-medium">
-                        {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                      <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
+                        <span>
+                          {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-[10px]"
+                          onClick={() => handleReturnBorrowed(item)}
+                        >
+                          Return
+                        </Button>
                       </div>
                     ))
                 )}
