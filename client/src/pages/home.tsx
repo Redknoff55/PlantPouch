@@ -2455,14 +2455,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     return `${replacement.id} (${color})`;
   };
 
-  const getSwapSummary = (color: string) => {
-    const replacements = equipment.filter((item) => item.temporarySystemColor === color);
-    if (!replacements.length) return "";
-    return replacements
-      .map((item) => `${item.originalSystemColor || item.systemColor || "Unassigned"} ${item.id}`)
-      .join(", ");
-  };
-
   const systemStatuses = systemsByColor.map((system) => {
     const availableItems = activeComponentsForSystem(system.color);
     const expectedCount = system.items.length;
@@ -2476,7 +2468,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       availableItems,
       effectiveAvailableCount,
       missingItems,
-      swapSummary: getSwapSummary(system.color),
     };
   });
 
@@ -2498,7 +2489,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     missingItems: system.missingItems,
     expectedCount: system.expectedCount,
     effectiveAvailableCount: system.effectiveAvailableCount,
-    swapSummary: system.swapSummary,
   }));
   const brokenItems = groupItemsBySystem(
     equipment.filter((item) => item.status === "broken")
@@ -2881,14 +2871,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <div className="space-y-2">
                 {checkedOutGroups.map((group) => {
                   const sample = group.items[0];
-                  const replacementLabels = equipment
-                    .filter((item) => item.temporarySystemColor === group.systemColor)
-                    .map((item) => `${item.originalSystemColor || item.systemColor || "Unassigned"} ${item.name} ${item.id}`);
-                  const replacementSuffix = replacementLabels.length
-                    ? ` (${replacementLabels.join(", ")})`
-                    : "";
                   const label = group.systemColor
-                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}${replacementSuffix}`
+                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}`
                     : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}`;
                   const time = sample?.checkedOutAt
                     ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
@@ -2950,7 +2934,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         )}
 
         {canManageEquipment && (
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
@@ -2973,7 +2957,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <div key={system.color} className="text-xs font-medium">
                         {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
                         {missingCount > 0 ? ` - missing ${missingCount}` : ""}
-                        {system.swapSummary ? ` - swapped: ${system.swapSummary}` : ""}
                       </div>
                     );
                   })}
@@ -3129,6 +3112,28 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Borrowed</h3>
+                <Badge variant="outline" className="text-[10px] font-mono">
+                  {equipment.filter((item) => item.temporarySystemColor).length}
+                </Badge>
+              </div>
+              <div className="space-y-1">
+                {equipment.filter((item) => item.temporarySystemColor).length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No borrowed components.</div>
+                ) : (
+                  equipment
+                    .filter((item) => item.temporarySystemColor)
+                    .map((item) => (
+                      <div key={item.id} className="text-xs font-medium">
+                        {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                      </div>
+                    ))
+                )}
+              </div>
             </div>
           </div>
         )}
