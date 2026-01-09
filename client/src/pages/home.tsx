@@ -1069,11 +1069,13 @@ function SystemCheckoutModal({
                         item.category !== "Computer" &&
                         (item.temporarySystemColor || item.systemColor) === color
                     );
+                    const uniqueLocations = Array.from(
+                      new Set(itemsForBag.map((item) => item.location || "Shop"))
+                    );
+                    const bagLocation =
+                      uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed";
+                    const isSameLocation = bagLocation === checkoutLocation;
                     const missingItems = itemsForBag.filter((item) => !isAvailableAtLocation(item));
-                    const missingPreview = missingItems
-                      .slice(0, 2)
-                      .map((item) => `${item.name} (${getMissingLabel(item)})`)
-                      .join(", ");
                     return (
                       <Button
                         key={color}
@@ -1083,13 +1085,18 @@ function SystemCheckoutModal({
                         disabled={itemsForBag.length === 0}
                       >
                         <span className="text-base font-semibold">{color} Bag</span>
-                        {missingItems.length > 0 ? (
-                          <span className="text-xs text-muted-foreground">
-                            Missing {missingItems.length}: {missingPreview}
-                            {missingItems.length > 2 ? "..." : ""}
-                          </span>
+                        {isSameLocation ? (
+                          missingItems.length > 0 ? (
+                            <span className="text-xs text-muted-foreground">
+                              Missing {missingItems.length}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-emerald-600">Complete</span>
+                          )
                         ) : (
-                          <span className="text-xs text-muted-foreground">All items available</span>
+                          <span className="text-xs text-muted-foreground">
+                            Location: {bagLocation}
+                          </span>
                         )}
                       </Button>
                     );
