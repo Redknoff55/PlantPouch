@@ -943,19 +943,26 @@ function SystemCheckoutModal({
                 {systemColors.map(color => {
                     // Check if we have items for this color
                     const hasItems = systemColors.includes(color);
+                    const hasActiveCheckout = equipment.some(
+                      (item) =>
+                        (item.temporarySystemColor || item.systemColor) === color &&
+                        item.status === "checked_out"
+                    );
                     return (
                         <Button
                             key={color}
                             variant="outline"
                             className={cn(
                                 "h-20 text-lg font-semibold border-2 relative overflow-hidden",
-                                hasItems ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
+                                hasItems && !hasActiveCheckout
+                                  ? "hover:border-primary hover:bg-primary/5"
+                                  : "opacity-50 cursor-not-allowed"
                             )}
-                            onClick={() => hasItems && handleColorSelect(color)}
-                            disabled={!hasItems}
+                            onClick={() => hasItems && !hasActiveCheckout && handleColorSelect(color)}
+                            disabled={!hasItems || hasActiveCheckout}
                         >
                             <div className={cn("absolute inset-y-0 left-0 w-2", colorClassMap[color] ?? "bg-foreground/20")} />
-                            {color} System
+                            {color} System{hasActiveCheckout ? " (Checked Out)" : ""}
                         </Button>
                     );
                 })}
@@ -2459,6 +2466,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const systemStatuses = systemsByColor.map((system) => {
     const availableItems = activeComponentsForSystem(system.color);
     const expectedCount = system.items.length;
+    const effectiveAvailableCount = Math.min(availableItems.length, expectedCount);
     const missingItems = system.items.filter(
       (item) => !availableItems.some((available) => available.id === item.id)
     );
@@ -2466,6 +2474,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       color: system.color,
       expectedCount,
       availableItems,
+      effectiveAvailableCount,
       missingItems,
       swapSummary: getSwapSummary(system.color),
     };
@@ -2488,6 +2497,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     items: system.availableItems,
     missingItems: system.missingItems,
     expectedCount: system.expectedCount,
+    effectiveAvailableCount: system.effectiveAvailableCount,
     swapSummary: system.swapSummary,
   }));
   const brokenItems = groupItemsBySystem(
@@ -2958,10 +2968,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               ) : (
                 <div className="space-y-1">
                   {systemStatuses.map((system) => {
-                    const missingCount = Math.max(system.expectedCount - system.availableItems.length, 0);
+                    const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
                     return (
                       <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.availableItems.length}/{system.expectedCount})
+                        {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
                         {missingCount > 0 ? ` - missing ${missingCount}` : ""}
                         {system.swapSummary ? ` - swapped: ${system.swapSummary}` : ""}
                       </div>
