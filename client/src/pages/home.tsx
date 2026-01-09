@@ -913,6 +913,12 @@ function SystemCheckoutModal({
       (item.temporarySystemColor || item.systemColor) === selectedBagColor
   );
   const selectedComputer = equipment.find((item) => item.id === selectedComputerId);
+  const checkoutLocation = selectedComputer?.location || "Shop";
+  const isAvailableAtLocation = (item: Equipment) =>
+    item.status === "available" &&
+    !item.temporarySystemColor &&
+    (item.location || "Shop") === checkoutLocation &&
+    (item.location || "Shop") !== "Repairs";
   const combinedItems = [
     ...(selectedComputer ? [selectedComputer] : []),
     ...bagItems,
@@ -940,7 +946,7 @@ function SystemCheckoutModal({
     return "missing";
   };
 
-  const missingBagItems = bagItems.filter((item) => !isItemAvailable(item));
+  const missingBagItems = bagItems.filter((item) => !isAvailableAtLocation(item));
 
   const handleBagSelect = (color: string) => {
     const initialVerified: Record<string, string> = {};
@@ -953,7 +959,7 @@ function SystemCheckoutModal({
       initialVerified[selectedComputer.id] = selectedComputer.id;
     }
     items.forEach((item) => {
-      initialVerified[item.id] = isItemAvailable(item) ? item.id : "";
+      initialVerified[item.id] = isAvailableAtLocation(item) ? item.id : "";
     });
     setSelectedBagColor(color);
     setVerifiedItems(initialVerified);
@@ -1063,7 +1069,7 @@ function SystemCheckoutModal({
                         item.category !== "Computer" &&
                         (item.temporarySystemColor || item.systemColor) === color
                     );
-                    const missingItems = itemsForBag.filter((item) => !isItemAvailable(item));
+                    const missingItems = itemsForBag.filter((item) => !isAvailableAtLocation(item));
                     const missingPreview = missingItems
                       .slice(0, 2)
                       .map((item) => `${item.name} (${getMissingLabel(item)})`)
@@ -1113,7 +1119,7 @@ function SystemCheckoutModal({
                  <div className="space-y-3">
                     {combinedItems.map(item => {
                         const currentSelectedId = verifiedItems[item.id];
-                        const isAvailable = isItemAvailable(item);
+                        const isAvailable = isAvailableAtLocation(item);
                         const isOriginal = currentSelectedId === item.id && isAvailable;
                         const selectedItem = equipment.find(e => e.id === currentSelectedId);
                         
@@ -1122,7 +1128,8 @@ function SystemCheckoutModal({
                             e.category === item.category && 
                             e.status === 'available' && 
                             e.id !== item.id &&
-                            !e.temporarySystemColor
+                            !e.temporarySystemColor &&
+                            (e.location || "Shop") === checkoutLocation
                         );
 
                         return (
@@ -3057,7 +3064,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .then((entries) => {
         if (!active) return;
         const filtered = entries.filter((entry) =>
-          entry.action === "check_in" || entry.action === "check_out"
+          entry.action === "system_check_in" || entry.action === "system_check_out"
         );
         setRecentHistory(filtered.slice(0, 5));
       })

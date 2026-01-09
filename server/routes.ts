@@ -90,12 +90,23 @@ export async function registerRoutes(
       const checkedOutAt = new Date();
       const systemNotes = `Checked out under WO ${workOrder} as part of ${systemColor} System by ${techName}`;
       
+      const bagColors = new Set<string>();
+      let computerId: string | null = null;
+      let computerLocation = "Shop";
+
       // Update all equipment in the system
       const updatedEquipment = await Promise.all(
         equipmentIds.map(async (id: string) => {
           const existing = await storage.getEquipment(id);
           if (!existing) {
             throw new Error(`Equipment not found: ${id}`);
+          }
+
+          if (existing.category === "Computer") {
+            computerId = existing.id;
+            computerLocation = existing.location || "Shop";
+          } else if (existing.systemColor) {
+            bagColors.add(existing.systemColor);
           }
 
           const updatePayload: Partial<InsertEquipment> = {
@@ -127,6 +138,18 @@ export async function registerRoutes(
         })
       );
 
+      if (computerId) {
+        const bagLabel =
+          bagColors.size > 0 ? `${Array.from(bagColors).join(", ")} bag` : "bag";
+        const details = `${techName} checked out ${systemColor} system, ${bagLabel}, from ${computerLocation}.`;
+        await storage.addEquipmentHistory({
+          equipmentId: computerId,
+          action: 'system_check_out',
+          details,
+          workOrder,
+        });
+      }
+
       res.json(updatedEquipment);
     } catch (error) {
       console.error("Error checking out system:", error);
@@ -150,6 +173,13 @@ export async function registerRoutes(
         return res.status(404).json({ error: "No equipment found for this work order" });
       }
 
+      const bagColors = new Set<string>();
+      const brokenItems: Array<{ id: string; name: string }> = [];
+      let computerId: string | null = null;
+      let computerColor = "Unassigned";
+      let computerLocation = "Shop";
+      let checkoutTech = "Unknown tech";
+
       // Update each item
       const updatedEquipment = await Promise.all(
         equipment.map(async (item) => {
@@ -159,6 +189,19 @@ export async function registerRoutes(
           const baseNotes =
             report.notes || (report.isBroken ? 'Reported broken during system check-in' : 'Returned via system check-in');
           const notes = `WO ${workOrder}: ${baseNotes}`;
+
+          if (item.category === "Computer") {
+            computerId = item.id;
+            computerColor = item.systemColor || "Unassigned";
+            computerLocation = item.location || "Shop";
+            checkoutTech = item.checkedOutBy || "Unknown tech";
+          } else if (item.systemColor) {
+            bagColors.add(item.systemColor);
+          }
+
+          if (report.isBroken) {
+            brokenItems.push({ id: item.id, name: item.name });
+          }
 
           const updated = await storage.updateEquipment(item.id, {
             status: newStatus,
@@ -192,6 +235,24 @@ export async function registerRoutes(
           return updated;
         })
       );
+
+      if (computerId) {
+        const bagLabel =
+          bagColors.size > 0 ? `${Array.from(bagColors).join(", ")} bag` : "bag";
+        const brokenLabel =
+          brokenItems.length > 0
+            ? ` Broken: ${brokenItems
+                .map((entry) => `${entry.id} ${entry.name}`)
+                .join(", ")}.`
+            : " Returned in good condition.";
+        const details = `${checkoutTech} checked in ${computerColor} system and ${bagLabel} to ${computerLocation}.${brokenLabel}`;
+        await storage.addEquipmentHistory({
+          equipmentId: computerId,
+          action: 'system_check_in',
+          details,
+          workOrder,
+        });
+      }
 
       res.json(updatedEquipment);
     } catch (error) {
