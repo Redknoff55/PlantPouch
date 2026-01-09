@@ -93,14 +93,27 @@ export async function registerRoutes(
       // Update all equipment in the system
       const updatedEquipment = await Promise.all(
         equipmentIds.map(async (id: string) => {
-          const equipment = await storage.updateEquipment(id, {
+          const existing = await storage.getEquipment(id);
+          if (!existing) {
+            throw new Error(`Equipment not found: ${id}`);
+          }
+
+          const updatePayload: Partial<InsertEquipment> = {
             status: 'checked_out',
-            systemColor,
             workOrder,
             checkedOutBy: techName,
             checkedOutAt,
             notes: systemNotes,
-          });
+          };
+
+          if (existing.category === "Computer") {
+            updatePayload.systemColor = systemColor;
+            updatePayload.temporarySystemColor = undefined;
+          } else {
+            updatePayload.temporarySystemColor = systemColor;
+          }
+
+          const equipment = await storage.updateEquipment(id, updatePayload);
           
           // Add history entry
           await storage.addEquipmentHistory({

@@ -2613,6 +2613,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     repairs: false,
   });
   const [searchTerm, setSearchTerm] = useState("");
+  const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
+  const [bagPreviewColor, setBagPreviewColor] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
@@ -2651,6 +2653,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       equipment
         .flatMap((item) => [item.systemColor, item.temporarySystemColor])
         .filter((color): color is string => !!color && color.trim().length > 0)
+    )
+  );
+  const bagColorOptions = Array.from(
+    new Set(
+      equipment
+        .filter((item) => item.category !== "Computer" && item.systemColor)
+        .map((item) => item.systemColor as string)
     )
   );
   const baseSystemColors = Array.from(
@@ -2893,6 +2902,41 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const systemsAtLocation = systemLocationSummary.filter(
     (system) => system.location === locationFilter
   );
+
+  const isBagItemAvailable = (item: Equipment) =>
+    item.status === "available" &&
+    (item.location ?? "Shop") === "Shop" &&
+    !item.temporarySystemColor;
+
+  const getBagItemStatus = (item: Equipment) => {
+    if (item.location === "Repairs") return "Repairs";
+    if (item.status === "broken") return "Broken";
+    if (item.status === "checked_out") return "Checked out";
+    if (item.temporarySystemColor) return `Borrowed to ${item.temporarySystemColor}`;
+    if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
+    return "Missing";
+  };
+
+  const bagPreviewItems = bagPreviewColor
+    ? equipment.filter(
+        (item) => item.category !== "Computer" && item.systemColor === bagPreviewColor
+      )
+    : [];
+
+  const inventorySource = canManageEquipment ? filteredEquipment : equipment;
+  const inventoryFiltered = inventorySource.filter((item) => {
+    if (inventoryColorFilter === "All") return true;
+    const effectiveColor = item.temporarySystemColor || item.systemColor || "Unassigned";
+    return effectiveColor === inventoryColorFilter;
+  });
+  const inventoryGrouped = Object.entries(
+    inventoryFiltered.reduce((acc, item) => {
+      const key = item.temporarySystemColor || item.systemColor || "Unassigned";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<string, Equipment[]>)
+  ).sort(([a], [b]) => a.localeCompare(b));
 
   const togglePanel = (key: string) => {
     setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -3621,22 +3665,86 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         <div className="space-y-4">
             <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold tracking-tight">Inventory</h2>
-                <div className="flex gap-2 text-xs">
-                    <span className="px-2 py-1 rounded bg-muted text-muted-foreground font-medium">All Systems</span>
+                <div className="flex items-center gap-2">
+                  <Select value={inventoryColorFilter} onValueChange={setInventoryColorFilter}>
+                    <SelectTrigger className="h-8 w-[180px] text-xs">
+                      <SelectValue placeholder="Filter by system" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="All">All Systems</SelectItem>
+                      {systemColorOptions.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          {color} System
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="Unassigned">Unassigned</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
+                    <SelectTrigger className="h-8 w-[180px] text-xs">
+                      <SelectValue placeholder="Color bags" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">No bag selected</SelectItem>
+                      {bagColorOptions.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          {color} Bag
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
             </div>
+
+            {bagPreviewColor && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{bagPreviewColor} Bag Contents</span>
+                  <span className="text-muted-foreground">{bagPreviewItems.length} items</span>
+                </div>
+                {bagPreviewItems.length === 0 ? (
+                  <div className="text-muted-foreground">No items found for this bag.</div>
+                ) : (
+                  <div className="grid gap-2">
+                    {bagPreviewItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2">
+                        <span className="font-mono">{item.id}</span>
+                        <span className="flex-1 text-muted-foreground truncate">{item.name}</span>
+                        <span className={cn("text-[10px] uppercase", isBagItemAvailable(item) ? "text-emerald-500" : "text-amber-600")}>
+                          {isBagItemAvailable(item) ? "Available" : getBagItemStatus(item)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             
-            <div className="grid gap-3">
-                {(canManageEquipment ? filteredEquipment : equipment).map(item => (
-                    <EquipmentListItem 
-                        key={item.id} 
-                        item={item} 
-                        onClick={() => setSelectedEquipmentId(item.id)} 
-                        selectable={canManageEquipment}
-                        selected={selectedIds.includes(item.id)}
-                        onToggleSelect={toggleSelect}
-                    />
-                ))}
+            <div className="space-y-6">
+              {inventoryGrouped.length === 0 ? (
+                <div className="text-sm text-muted-foreground">No inventory to show.</div>
+              ) : (
+                inventoryGrouped.map(([color, items]) => (
+                  <div key={color} className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">{color} System</h3>
+                      <span className="text-xs text-muted-foreground">{items.length} items</span>
+                    </div>
+                    <div className="grid gap-3">
+                      {items.map((item) => (
+                        <EquipmentListItem 
+                          key={item.id} 
+                          item={item} 
+                          onClick={() => setSelectedEquipmentId(item.id)} 
+                          selectable={canManageEquipment}
+                          selected={selectedIds.includes(item.id)}
+                          onToggleSelect={toggleSelect}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
         </div>
       </main>
