@@ -1031,7 +1031,7 @@ function SystemCheckoutModal({
                             key={color}
                             variant="outline"
                             className={cn(
-                                "h-24 text-lg font-semibold border-2 relative overflow-hidden flex flex-col items-start justify-center gap-1",
+                                "h-24 text-lg font-semibold border-2 relative overflow-hidden flex flex-col items-start justify-center gap-1 whitespace-normal break-words",
                                 hasAvailableComputer
                                   ? "hover:border-primary hover:bg-primary/5"
                                   : "opacity-50 cursor-not-allowed"
@@ -1040,8 +1040,8 @@ function SystemCheckoutModal({
                             disabled={!hasAvailableComputer}
                         >
                             <div className={cn("absolute inset-y-0 left-0 w-2", colorClassMap[color] ?? "bg-foreground/20")} />
-                            <span>{color} Computer</span>
-                            <span className="text-xs text-muted-foreground">Location: {locationLabel}</span>
+                            <span className="whitespace-normal break-words">{color} Computer</span>
+                            <span className="text-xs text-muted-foreground whitespace-normal break-words">Location: {locationLabel}</span>
                         </Button>
                     );
                 })}
@@ -1080,21 +1080,21 @@ function SystemCheckoutModal({
                       <Button
                         key={color}
                         variant="outline"
-                        className="h-24 text-left border-2 flex flex-col items-start justify-center gap-1"
+                        className="h-24 text-left border-2 flex flex-col items-start justify-center gap-1 whitespace-normal break-words"
                         onClick={() => handleBagSelect(color)}
                         disabled={itemsForBag.length === 0}
                       >
-                        <span className="text-base font-semibold">{color} Bag</span>
+                        <span className="text-base font-semibold whitespace-normal break-words">{color} Bag</span>
                         {isSameLocation ? (
                           missingItems.length > 0 ? (
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground whitespace-normal break-words">
                               Missing {missingItems.length}
                             </span>
                           ) : (
                             <span className="text-xs text-emerald-600">Complete</span>
                           )
                         ) : (
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground whitespace-normal break-words">
                             Location: {bagLocation}
                           </span>
                         )}
@@ -2585,7 +2585,7 @@ function TransferSystemModal({
                       key={color}
                       variant="outline"
                       className={cn(
-                        "h-16 text-base font-semibold border-2",
+                        "h-16 text-base font-semibold border-2 whitespace-normal break-words",
                         hasAvailable ? "hover:border-primary hover:bg-primary/5" : "opacity-50 cursor-not-allowed"
                       )}
                       onClick={() => {
@@ -2595,7 +2595,7 @@ function TransferSystemModal({
                       }}
                       disabled={!hasAvailable}
                     >
-                      {color} Computer
+                      <span className="whitespace-normal break-words">{color} Computer</span>
                     </Button>
                   );
                 })}
@@ -2621,30 +2621,33 @@ function TransferSystemModal({
                         item.category !== "Computer" &&
                         (item.temporarySystemColor || item.systemColor) === color
                     );
+                    const uniqueLocations = Array.from(
+                      new Set(itemsForBag.map((item) => item.location || "Shop"))
+                    );
+                    const bagLocation =
+                      uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed";
                     const missingItems = itemsForBag.filter((item) => !isTransferable(item));
-                    const missingPreview = missingItems
-                      .slice(0, 2)
-                      .map((item) => `${item.name} (${getMissingLabel(item)})`)
-                      .join(", ");
                     return (
                       <Button
                         key={color}
                         variant="outline"
-                        className="h-20 text-left border-2 flex flex-col items-start justify-center gap-1"
+                        className="h-20 text-left border-2 flex flex-col items-start justify-center gap-1 whitespace-normal break-words"
                         onClick={() => {
                           setSelectedBagColor(color);
                           setStep(3);
                         }}
                         disabled={itemsForBag.length === 0}
                       >
-                        <span className="text-base font-semibold">{color} Bag</span>
+                        <span className="text-base font-semibold whitespace-normal break-words">{color} Bag</span>
+                        <span className="text-xs text-muted-foreground whitespace-normal break-words">
+                          Location: {bagLocation}
+                        </span>
                         {missingItems.length > 0 ? (
-                          <span className="text-xs text-muted-foreground">
-                            Missing {missingItems.length}: {missingPreview}
-                            {missingItems.length > 2 ? "..." : ""}
+                          <span className="text-xs text-muted-foreground whitespace-normal break-words">
+                            Missing {missingItems.length}
                           </span>
                         ) : (
-                          <span className="text-xs text-muted-foreground">All items available</span>
+                          <span className="text-xs text-emerald-600">Complete</span>
                         )}
                       </Button>
                     );
@@ -2666,7 +2669,7 @@ function TransferSystemModal({
               </div>
 
               {missingBagItems.length > 0 && (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground break-words whitespace-normal">
                   Missing from bag: {missingBagItems.map((item) => `${item.name} (${getMissingLabel(item)})`).join(", ")}
                 </div>
               )}
