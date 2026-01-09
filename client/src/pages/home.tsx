@@ -2431,20 +2431,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         getLocation(item) === "Shop"
     );
 
-  const systemStatuses = systemsByColor.map((system) => {
-    const availableItems = activeComponentsForSystem(system.color);
-    const expectedCount = system.items.length;
-    const missingItems = system.items.filter(
-      (item) => !availableItems.some((available) => available.id === item.id)
-    );
-    return {
-      color: system.color,
-      expectedCount,
-      availableItems,
-      missingItems,
-      swapSummary: getSwapSummary(system.color),
-    };
-  });
 
   const brokenSystems = systemsByColor.filter((system) =>
     system.items.some((item) => item.status === "broken")
@@ -2469,6 +2455,21 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .map((item) => `${item.originalSystemColor || item.systemColor || "Unassigned"} ${item.id}`)
       .join(", ");
   };
+
+  const systemStatuses = systemsByColor.map((system) => {
+    const availableItems = activeComponentsForSystem(system.color);
+    const expectedCount = system.items.length;
+    const missingItems = system.items.filter(
+      (item) => !availableItems.some((available) => available.id === item.id)
+    );
+    return {
+      color: system.color,
+      expectedCount,
+      availableItems,
+      missingItems,
+      swapSummary: getSwapSummary(system.color),
+    };
+  });
 
   const groupItemsBySystem = (items: Equipment[]) =>
     Object.values(
