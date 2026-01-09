@@ -2431,10 +2431,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         getLocation(item) === "Shop"
     );
 
-  const goodSystemsInShop = systemsByColor.filter((system) => {
+  const systemStatuses = systemsByColor.map((system) => {
+    const availableItems = activeComponentsForSystem(system.color);
     const expectedCount = system.items.length;
-    const activeCount = activeComponentsForSystem(system.color).length;
-    return activeCount >= expectedCount;
+    const missingItems = system.items.filter(
+      (item) => !availableItems.some((available) => available.id === item.id)
+    );
+    return {
+      color: system.color,
+      expectedCount,
+      availableItems,
+      missingItems,
+      swapSummary: getSwapSummary(system.color),
+    };
   });
 
   const brokenSystems = systemsByColor.filter((system) =>
@@ -2473,9 +2482,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       }, {} as Record<string, { color: string; items: Equipment[] }>)
     );
 
-  const goodSystemItems = groupItemsBySystem(
-    goodSystemsInShop.flatMap((system) => activeComponentsForSystem(system.color))
-  );
+  const goodSystemItems = systemStatuses.map((system) => ({
+    color: system.color,
+    items: system.availableItems,
+    missingItems: system.missingItems,
+    expectedCount: system.expectedCount,
+    swapSummary: system.swapSummary,
+  }));
   const brokenItems = groupItemsBySystem(
     equipment.filter((item) => item.status === "broken")
   );
@@ -2963,23 +2976,24 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[10px] font-mono">
-                    {goodSystemsInShop.length}
+                    {systemStatuses.length}
                   </Badge>
                   <Button variant="ghost" size="sm" onClick={() => togglePanel("good")}>
                     {expandedPanels.good ? "Hide" : "View"}
                   </Button>
                 </div>
               </div>
-              {goodSystemsInShop.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No complete systems ready.</div>
+              {systemStatuses.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No systems in shop.</div>
               ) : (
                 <div className="space-y-1">
-                  {goodSystemsInShop.map((system) => {
-                    const swapSummary = getSwapSummary(system.color);
+                  {systemStatuses.map((system) => {
+                    const missingCount = Math.max(system.expectedCount - system.availableItems.length, 0);
                     return (
                       <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.items.length})
-                        {swapSummary ? ` - swapped: ${swapSummary}` : ""}
+                        {system.color} System ({system.availableItems.length}/{system.expectedCount})
+                        {missingCount > 0 ? ` - missing ${missingCount}` : ""}
+                        {system.swapSummary ? ` - swapped: ${system.swapSummary}` : ""}
                       </div>
                     );
                   })}
@@ -2999,6 +3013,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           </span>
                         </div>
                       ))}
+                      {group.missingItems.length > 0 && (
+                        <div className="text-[10px] text-muted-foreground">
+                          Missing: {group.missingItems.map((item) => item.id).join(", ")}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
