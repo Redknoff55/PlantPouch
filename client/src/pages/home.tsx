@@ -2340,6 +2340,126 @@ function SwapModal({
   );
 }
 
+function TransferSystemModal({
+  isOpen,
+  onClose,
+  systemColors,
+  locationOptions,
+  onAddLocation,
+  onTransfer,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  systemColors: string[];
+  locationOptions: string[];
+  onAddLocation: (value: string) => void;
+  onTransfer: (color: string, location: string) => void;
+}) {
+  const [selectedColor, setSelectedColor] = useState("");
+  const [selectedLocation, setSelectedLocation] = useState("");
+  const [newLocation, setNewLocation] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedColor("");
+    setSelectedLocation("");
+    setNewLocation("");
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Transfer System</h2>
+              <p className="text-xs text-muted-foreground">Move a system to a new location</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label>System Color</Label>
+            <Select value={selectedColor} onValueChange={setSelectedColor}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a system..." />
+              </SelectTrigger>
+              <SelectContent>
+                {systemColors.map((color) => (
+                  <SelectItem key={color} value={color}>
+                    {color} System
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>New Location</Label>
+            <Select value={selectedLocation} onValueChange={setSelectedLocation}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a location..." />
+              </SelectTrigger>
+              <SelectContent>
+                {locationOptions.map((location) => (
+                  <SelectItem key={location} value={location}>
+                    {location}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Add Location</Label>
+            <div className="flex gap-2">
+              <Input
+                value={newLocation}
+                onChange={(event) => setNewLocation(event.target.value)}
+                placeholder="e.g. Containment Unit 1"
+              />
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!newLocation.trim()) return;
+                  onAddLocation(newLocation);
+                  setSelectedLocation(newLocation.trim());
+                  setNewLocation("");
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => onTransfer(selectedColor, selectedLocation)}
+              disabled={!selectedColor || !selectedLocation}
+            >
+              Transfer
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
   const adminEnabled = mode === "admin";
@@ -2367,6 +2487,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
+  const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -2399,6 +2520,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         .flatMap((item) => [item.systemColor, item.temporarySystemColor])
         .filter((color): color is string => !!color && color.trim().length > 0)
     )
+  );
+  const baseSystemColors = Array.from(
+    new Set(equipment.map((item) => item.systemColor).filter((color): color is string => !!color))
   );
 
   const checkedOutGroups = Object.values(
@@ -2569,6 +2693,34 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     const trimmed = value.trim();
     if (!trimmed) return;
     setCustomLocations((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+  };
+
+  const handleTransferSystem = async (color: string, location: string) => {
+    if (!color || !location) return;
+    const itemsToMove = equipment.filter(
+      (item) =>
+        item.systemColor === color &&
+        item.status !== "checked_out" &&
+        (item.location ?? "Shop") !== "Repairs"
+    );
+
+    if (itemsToMove.length === 0) {
+      toast.error("No available items to move for that system.");
+      return;
+    }
+
+    try {
+      await Promise.all(
+        itemsToMove.map((item) =>
+          api.equipment.update(item.id, { location })
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`${color} system moved to ${location}.`);
+      setIsTransferOpen(false);
+    } catch {
+      toast.error("Failed to transfer system.");
+    }
   };
 
   const togglePanel = (key: string) => {
@@ -2898,6 +3050,41 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   Bulk Edit ({selectedIds.length})
                 </Button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {canManageEquipment && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">Locations</h2>
+                <p className="text-xs text-muted-foreground">Manage staging areas for systems</p>
+              </div>
+              <Button size="sm" onClick={() => setIsTransferOpen(true)}>
+                Transfer Location
+              </Button>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {locationOptions.map((location) => {
+                const count = equipment.filter(
+                  (item) => (item.location ?? "Shop") === location
+                ).length;
+                const systemCount = new Set(
+                  equipment
+                    .filter((item) => (item.location ?? "Shop") === location)
+                    .map((item) => item.systemColor)
+                    .filter(Boolean)
+                ).size;
+                return (
+                  <div key={location} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+                    <span className="font-semibold">{location}</span>
+                    <span className="text-muted-foreground">
+                      {systemCount} systems • {count} items
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -3295,6 +3482,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           <SystemCheckInModal
             isOpen={isSystemCheckInOpen}
             onClose={() => setIsSystemCheckInOpen(false)}
+          />
+        )}
+        {isTransferOpen && (
+          <TransferSystemModal
+            isOpen={isTransferOpen}
+            onClose={() => setIsTransferOpen(false)}
+            systemColors={baseSystemColors}
+            locationOptions={locationOptions}
+            onAddLocation={handleAddLocation}
+            onTransfer={handleTransferSystem}
           />
         )}
         {isBulkEditOpen && (
