@@ -210,6 +210,7 @@ function EquipmentListItem({
           <div className="text-sm text-muted-foreground flex items-center gap-2">
             <span>{item.category}</span>
             <span className="text-xs font-mono">{item.id}</span>
+            <span className="text-xs text-muted-foreground">Location: {item.location ?? "Shop"}</span>
           </div>
         </div>
         {item.status === 'checked_out' && (
@@ -3271,7 +3272,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const canManageEquipment = adminEnabled && isAdminMode;
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({
     good: false,
-    broken: false,
     repairs: false,
     waiting: false,
   });
@@ -3312,7 +3312,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const stats = {
     total: equipment.length,
     out: equipment.filter(e => e.status === 'checked_out').length,
-    broken: equipment.filter(e => e.status === 'broken').length,
+    broken: equipment.filter((item) => isRepairLocation(item.location)).length,
   };
 
   const locationOptions = Array.from(
@@ -3416,10 +3416,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     );
 
 
-  const brokenSystems = systemsByColor.filter((system) =>
-    system.items.some((item) => item.status === "broken")
-  );
-
   const repairSystems = systemsByColor.filter((system) =>
     system.items.some((item) => getRepairLocationType(item.location) === "sent")
   );
@@ -3470,9 +3466,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     expectedCount: system.expectedCount,
     effectiveAvailableCount: system.effectiveAvailableCount,
   }));
-  const brokenItems = groupItemsBySystem(
-    equipment.filter((item) => item.status === "broken")
-  );
   const repairItems = groupItemsBySystem(
     equipment.filter((item) => getRepairLocationType(item.location) === "sent")
   );
@@ -3996,7 +3989,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
             <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
                 <span className="block text-3xl font-bold font-mono text-destructive">{stats.broken}</span>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Broken</span>
+                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Repairs</span>
             </div>
              <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
                 <span className="block text-3xl font-bold font-mono">{stats.total}</span>
@@ -4242,75 +4235,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           Missing: {group.missingItems.map((item) => item.id).join(", ")}
                         </div>
                       )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Broken Components</h3>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono">
-                    {brokenSystems.length}
-                  </Badge>
-                  <Button variant="ghost" size="sm" onClick={() => togglePanel("broken")}>
-                    {expandedPanels.broken ? "Hide" : "View"}
-                  </Button>
-                </div>
-              </div>
-              {brokenSystems.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No broken components.</div>
-              ) : (
-                <div className="space-y-1">
-                  {brokenSystems.map((system) => (
-                    <div key={system.color} className="text-xs font-medium">
-                      {system.color} System ({system.items.length})
-                    </div>
-                  ))}
-                </div>
-              )}
-              {expandedPanels.broken && (
-                <div className="mt-3 space-y-2">
-                  {brokenItems.map((group) => (
-                    <div key={group.color} className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
-                      {group.items.map((item) => (
-                        <div key={item.id} className="flex flex-col gap-1 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-mono">{item.id}</span>
-                            <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-[10px]"
-                                onClick={() => handleSendToRepairs(item)}
-                              >
-                                Send to Repairs
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-[10px]"
-                              onClick={() => {
-                                setSwapTarget(item);
-                                setSwapContext("broken");
-                                setIsSwapOpen(true);
-                              }}
-                              >
-                                Swap
-                              </Button>
-                            </div>
-                          </div>
-                          {item.replacementId && (
-                            <div className="text-[10px] text-muted-foreground">
-                              Swapped with {getReplacementLabel(item)}
-                            </div>
-                          )}
-                        </div>
-                      ))}
                     </div>
                   ))}
                 </div>

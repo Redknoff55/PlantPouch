@@ -293,6 +293,7 @@ export async function registerRoutes(
             workOrder: null,
             checkedOutBy: null,
             checkedOutAt: null,
+            location: report.isBroken ? "Waiting on Repairs" : item.location,
             notes,
           });
 
@@ -300,7 +301,6 @@ export async function registerRoutes(
             await storage.updateEquipment(item.id, {
               temporarySystemColor: null,
               swappedFromId: null,
-              status: 'available',
             });
             if (item.swappedFromId) {
               await storage.updateEquipment(item.swappedFromId, {
@@ -403,6 +403,7 @@ export async function registerRoutes(
         workOrder: null,
         checkedOutBy: null,
         checkedOutAt: null,
+        location: isBroken ? "Waiting on Repairs" : existing.location,
         notes: combinedNotes || undefined,
       });
 
@@ -410,7 +411,6 @@ export async function registerRoutes(
         await storage.updateEquipment(req.params.id, {
           temporarySystemColor: null,
           swappedFromId: null,
-          status: 'available',
         });
         if (equipment.swappedFromId) {
           await storage.updateEquipment(equipment.swappedFromId, {
