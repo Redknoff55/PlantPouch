@@ -725,12 +725,22 @@ function ActionModal({
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
   const isRepairItem = isRepairLocation(equipment.location);
-  const systemComputer = equipment.systemColor
-    ? allEquipment.find(
-        (item) => item.category === "Computer" && item.systemColor === equipment.systemColor
-      )
-    : null;
-  const systemLocation = systemComputer?.location || "Shop";
+  const getSystemReturnLocation = () => {
+    if (!equipment.systemColor) return "Shop";
+    const candidates = allEquipment.filter(
+      (item) =>
+        (item.temporarySystemColor || item.systemColor) === equipment.systemColor &&
+        !isRepairLocation(item.location)
+    );
+    if (candidates.length === 0) return "Shop";
+    const counts = candidates.reduce<Record<string, number>>((acc, item) => {
+      const location = item.location || "Shop";
+      acc[location] = (acc[location] ?? 0) + 1;
+      return acc;
+    }, {});
+    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "Shop";
+  };
+  const systemLocation = getSystemReturnLocation();
 
   const handleSubmit = () => {
     if (isCheckingOut) {
@@ -4095,8 +4105,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => selectAllFiltered(filteredEquipment.map((item) => item.id))}
-                  disabled={filteredEquipment.length === 0}
+                  onClick={() => selectAllFiltered(inventoryFiltered.map((item) => item.id))}
+                  disabled={inventoryFiltered.length === 0}
                 >
                   Select All
                 </Button>
@@ -4274,9 +4284,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         {canManageEquipment && (
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {systemStatuses.length}
                   </Badge>
@@ -4331,9 +4341,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">Sent for Repairs</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {repairSystems.length}
                   </Badge>
@@ -4384,9 +4394,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </div>
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="text-sm font-semibold">Waiting on Repairs</h3>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {waitingSystems.length}
                   </Badge>
