@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { addMonths, format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
@@ -3364,11 +3365,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
   const canManageEquipment = adminEnabled && isAdminMode;
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({
-    good: false,
-    repairs: false,
-    waiting: false,
-  });
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
   const [bagPreviewColor, setBagPreviewColor] = useState("none");
@@ -3736,10 +3733,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       return acc;
     }, {} as Record<string, Equipment[]>)
   ).sort(([a], [b]) => a.localeCompare(b));
-
-  const togglePanel = (key: string) => {
-    setExpandedPanels((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -4282,35 +4275,34 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           </div>
 
         {canManageEquipment && (
-          <div className="grid gap-4 md:grid-cols-4">
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Good Systems (Shop)</h3>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono">
-                    {systemStatuses.length}
-                  </Badge>
-                  <Button variant="ghost" size="sm" onClick={() => togglePanel("good")}>
-                    {expandedPanels.good ? "Hide" : "View"}
-                  </Button>
-                </div>
-              </div>
-              {systemStatuses.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No systems in shop.</div>
-              ) : (
-                <div className="space-y-1">
-                  {systemStatuses.map((system) => {
-                    const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
-                    return (
-                      <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
-                        {missingCount > 0 ? ` - missing ${missingCount}` : ""}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {expandedPanels.good && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <Tabs defaultValue="good">
+              <TabsList className="flex flex-wrap gap-2">
+                <TabsTrigger value="good">Good ({systemStatuses.length})</TabsTrigger>
+                <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
+                <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
+                <TabsTrigger value="borrowed">
+                  Borrowed ({equipment.filter((item) => item.swappedFromId).length})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="good" className="mt-4 space-y-3">
+                <div className="text-sm font-semibold">Good Systems (Shop)</div>
+                {systemStatuses.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No systems in shop.</div>
+                ) : (
+                  <div className="space-y-1">
+                    {systemStatuses.map((system) => {
+                      const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
+                      return (
+                        <div key={system.color} className="text-xs font-medium">
+                          {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
+                          {missingCount > 0 ? ` - missing ${missingCount}` : ""}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="mt-3 space-y-2">
                   {goodSystemItems.map((group) => (
                     <div key={group.color} className="space-y-1">
@@ -4337,16 +4329,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </TabsContent>
 
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Sent for Repairs</h3>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono">
-                    {repairSystems.length}
-                  </Badge>
+              <TabsContent value="sent" className="mt-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold">Sent for Repairs</div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -4355,23 +4342,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   >
                     Returns
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => togglePanel("repairs")}>
-                    {expandedPanels.repairs ? "Hide" : "View"}
-                  </Button>
                 </div>
-              </div>
-              {repairSystems.length === 0 ? (
-                <div className="text-xs text-muted-foreground">Nothing sent for repairs.</div>
-              ) : (
-                <div className="space-y-1">
-                  {repairSystems.map((system) => (
-                    <div key={system.color} className="text-xs font-medium">
-                      {system.color} System ({system.items.length})
-                    </div>
-                  ))}
-                </div>
-              )}
-              {expandedPanels.repairs && (
+                {repairSystems.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">Nothing sent for repairs.</div>
+                ) : (
+                  <div className="space-y-1">
+                    {repairSystems.map((system) => (
+                      <div key={system.color} className="text-xs font-medium">
+                        {system.color} System ({system.items.length})
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-3 space-y-2">
                   {repairItems.map((group) => (
                     <div key={group.color} className="space-y-1">
@@ -4390,33 +4372,21 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </TabsContent>
 
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold">Waiting on Repairs</h3>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="text-[10px] font-mono">
-                    {waitingSystems.length}
-                  </Badge>
-                  <Button variant="ghost" size="sm" onClick={() => togglePanel("waiting")}>
-                    {expandedPanels.waiting ? "Hide" : "View"}
-                  </Button>
-                </div>
-              </div>
-              {waitingSystems.length === 0 ? (
-                <div className="text-xs text-muted-foreground">Nothing waiting on repairs.</div>
-              ) : (
-                <div className="space-y-1">
-                  {waitingSystems.map((system) => (
-                    <div key={system.color} className="text-xs font-medium">
-                      {system.color} System ({system.items.length})
-                    </div>
-                  ))}
-                </div>
-              )}
-              {expandedPanels.waiting && (
+              <TabsContent value="waiting" className="mt-4 space-y-3">
+                <div className="text-sm font-semibold">Waiting on Repairs</div>
+                {waitingSystems.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">Nothing waiting on repairs.</div>
+                ) : (
+                  <div className="space-y-1">
+                    {waitingSystems.map((system) => (
+                      <div key={system.color} className="text-xs font-medium">
+                        {system.color} System ({system.items.length})
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-3 space-y-2">
                   {waitingItems.map((group) => (
                     <div key={group.color} className="space-y-1">
@@ -4435,40 +4405,35 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
+              </TabsContent>
 
-            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Borrowed components</h3>
-                <Badge variant="outline" className="text-[10px] font-mono">
-                  {equipment.filter((item) => item.swappedFromId).length}
-                </Badge>
-              </div>
-              <div className="space-y-1">
+              <TabsContent value="borrowed" className="mt-4 space-y-2">
+                <div className="text-sm font-semibold">Borrowed components</div>
                 {equipment.filter((item) => item.swappedFromId).length === 0 ? (
                   <div className="text-xs text-muted-foreground">No borrowed components.</div>
                 ) : (
-                  equipment
-                    .filter((item) => item.swappedFromId)
-                    .map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
-                        <span>
-                          {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2 text-[10px]"
-                          onClick={() => handleReturnBorrowed(item)}
-                        >
-                          Return
-                        </Button>
-                      </div>
-                    ))
+                  <div className="space-y-1">
+                    {equipment
+                      .filter((item) => item.swappedFromId)
+                      .map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
+                          <span>
+                            {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[10px]"
+                            onClick={() => handleReturnBorrowed(item)}
+                          >
+                            Return
+                          </Button>
+                        </div>
+                      ))}
+                  </div>
                 )}
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           </div>
         )}
 
