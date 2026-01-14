@@ -4222,13 +4222,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     <div key={group.color} className="space-y-1">
                       <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
                       {group.items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setSelectedEquipmentId(item.id)}
+                          className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
+                        >
                           <span className="font-mono">{item.id}</span>
                           <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
                           <span className="text-muted-foreground">
                             {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "-"}
                           </span>
-                        </div>
+                        </button>
                       ))}
                       {group.missingItems.length > 0 && (
                         <div className="text-[10px] text-muted-foreground">
