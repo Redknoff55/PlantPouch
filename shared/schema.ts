@@ -17,6 +17,7 @@ export const equipment = pgTable("equipment", {
   workOrder: text("work_order"),
   checkedOutBy: text("checked_out_by"),
   checkedOutAt: timestamp("checked_out_at"),
+  dueDate: timestamp("due_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { addMonths, format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,6 +71,51 @@ const getRepairLocationLabel = (location?: string | null) => {
   if (type === "waiting") return "Waiting on repairs";
   if (type === "sent") return "Sent for repairs";
   return null;
+};
+
+const parseDueDateString = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const [monthRaw, dayRaw, yearRaw] = trimmed.split("/");
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const year = Number(yearRaw);
+  if (!month || !day || !year) return null;
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+};
+
+const getDueDateStatus = (dueDate?: string | Date | null) => {
+  if (!dueDate) return null;
+  const date = dueDate instanceof Date ? dueDate : new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  const oneMonth = addMonths(now, 1);
+  const threeMonths = addMonths(now, 3);
+  if (date.getTime() <= oneMonth.getTime()) return "red";
+  if (date.getTime() <= threeMonths.getTime()) return "yellow";
+  return "green";
+};
+
+const formatDueDateLabel = (dueDate?: string | Date | null) => {
+  if (!dueDate) return "";
+  const date = dueDate instanceof Date ? dueDate : new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return "";
+  return `Due Date: ${format(date, "MM/dd/yyyy")}`;
+};
+
+const formatDueDateValue = (dueDate?: string | Date | null) => {
+  if (!dueDate) return "";
+  const date = dueDate instanceof Date ? dueDate : new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return "";
+  return format(date, "MM/dd/yyyy");
 };
 
 // --- Components ---
@@ -110,6 +155,13 @@ function EquipmentListItem({
 }) {
   const isBroken = item.status === 'broken';
   const effectiveSystemColor = item.temporarySystemColor || item.systemColor;
+  const dueDateLabel = formatDueDateLabel(item.dueDate);
+  const dueDateStatus = getDueDateStatus(item.dueDate);
+  const dueDateStyles: Record<string, string> = {
+    green: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+    yellow: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    red: "bg-red-500/10 text-red-500 border-red-500/20",
+  };
 
   return (
     <motion.div
@@ -134,6 +186,14 @@ function EquipmentListItem({
             {effectiveSystemColor && (
               <Badge variant="outline" className="text-[10px] h-5 px-1.5 border-primary/20 text-primary">
                 {effectiveSystemColor} Sys
+              </Badge>
+            )}
+            {dueDateLabel && dueDateStatus && (
+              <Badge
+                variant="outline"
+                className={cn("text-[10px] h-5 px-2 border", dueDateStyles[dueDateStatus])}
+              >
+                {dueDateLabel}
               </Badge>
             )}
           </div>
@@ -401,6 +461,7 @@ function EditEquipmentModal({
     category: equipment.category,
     systemColor: equipment.systemColor ?? "",
     location: equipment.location ?? "Shop",
+    dueDate: formatDueDateValue(equipment.dueDate),
   });
   const [newLocation, setNewLocation] = useState("");
 
@@ -412,6 +473,7 @@ function EditEquipmentModal({
       category: equipment.category,
       systemColor: equipment.systemColor ?? "",
       location: equipment.location ?? "Shop",
+      dueDate: formatDueDateValue(equipment.dueDate),
     });
   }, [equipment, isOpen]);
 
@@ -429,6 +491,17 @@ function EditEquipmentModal({
       systemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
     };
+    const dueDateInput = formData.dueDate.trim();
+    if (dueDateInput) {
+      const parsed = parseDueDateString(dueDateInput);
+      if (!parsed) {
+        toast.error("Due Date must be MM/DD/YYYY.");
+        return;
+      }
+      payload.dueDate = parsed;
+    } else if (equipment.dueDate) {
+      payload.dueDate = null;
+    }
     if (nextId !== equipment.id) {
       payload.id = nextId;
     }
@@ -537,6 +610,15 @@ function EditEquipmentModal({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Due Date (MM/DD/YYYY)</Label>
+              <Input
+                value={formData.dueDate}
+                onChange={(e) => setFormData((prev) => ({ ...prev, dueDate: e.target.value }))}
+                placeholder="MM/DD/YYYY"
+              />
             </div>
 
             <div className="space-y-2">
@@ -1505,7 +1587,8 @@ function AddEquipmentModal({
     category: '',
     systemColor: '',
     location: 'Shop',
-    status: 'available'
+    status: 'available',
+    dueDate: ''
   });
   const [newLocation, setNewLocation] = useState("");
 
@@ -1516,6 +1599,17 @@ function AddEquipmentModal({
       toast.error("Please fill in all required fields");
       return;
     }
+
+    let dueDate: Date | undefined;
+    const dueDateInput = formData.dueDate.trim();
+    if (dueDateInput) {
+      const parsed = parseDueDateString(dueDateInput);
+      if (!parsed) {
+        toast.error("Due Date must be MM/DD/YYYY.");
+        return;
+      }
+      dueDate = parsed;
+    }
     
     createEquipment.mutate({
       id: formData.id,
@@ -1524,11 +1618,12 @@ function AddEquipmentModal({
       systemColor: formData.systemColor || undefined,
       originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
-      status: 'available'
+      status: 'available',
+      dueDate
     }, {
       onSuccess: () => {
         toast.success(`Equipment ${formData.id} added successfully`);
-        setFormData({ id: '', name: '', category: '', systemColor: '', location: 'Shop', status: 'available' });
+        setFormData({ id: '', name: '', category: '', systemColor: '', location: 'Shop', status: 'available', dueDate: '' });
         onClose();
       },
       onError: (error) => {
@@ -1622,6 +1717,15 @@ function AddEquipmentModal({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Due Date (MM/DD/YYYY)</Label>
+              <Input
+                placeholder="MM/DD/YYYY"
+                value={formData.dueDate}
+                onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
             </div>
 
             <div className="space-y-2">
@@ -2192,6 +2296,8 @@ function AdminImportModal({
     }, {});
     const systemColorIndex =
       headerMap.systemcolor ?? headerMap["system_color"] ?? headerMap["system color"];
+    const dueDateIndex =
+      headerMap["due date"] ?? headerMap["duedate"] ?? headerMap["due_date"];
     const locationIndex = headerMap.location ?? headerMap["location"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
@@ -2206,10 +2312,22 @@ function AdminImportModal({
       const category = hasHeader ? values[headerMap.category] : values[2];
       const systemColor = hasHeader ? values[systemColorIndex ?? -1] : values[3];
       const location = hasHeader ? values[locationIndex ?? -1] : values[4];
+      const dueDateRaw = hasHeader ? values[dueDateIndex ?? -1] : values[5];
+      const dueDateTrimmed = dueDateRaw?.trim() ?? "";
 
       if (!id || !name || !category) {
         nextErrors.push(`Row ${index + 1}: missing required fields (id, name, category).`);
         return;
+      }
+
+      let dueDate: Date | undefined;
+      if (dueDateTrimmed) {
+        const parsed = parseDueDateString(dueDateTrimmed);
+        if (!parsed) {
+          nextErrors.push(`Row ${index + 1}: invalid Due Date (use MM/DD/YYYY).`);
+          return;
+        }
+        dueDate = parsed;
       }
 
       nextRows.push({
@@ -2219,6 +2337,7 @@ function AdminImportModal({
         systemColor: systemColor?.trim() || undefined,
         originalSystemColor: systemColor?.trim() || undefined,
         location: location?.trim() || "Shop",
+        dueDate,
         status: "available"
       });
     });
@@ -2289,8 +2408,8 @@ function AdminImportModal({
           </div>
 
           <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Upload a CSV file with columns: id, name, category, systemColor (optional), location (optional).</p>
-            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor,location</p>
+            <p>Upload a CSV file with columns: id, name, category, systemColor (optional), location (optional), Due Date (optional, MM/DD/YYYY).</p>
+            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor,location,Due Date</p>
           </div>
 
           <div className="space-y-3">
@@ -2787,6 +2906,279 @@ function TransferSystemModal({
   );
 }
 
+function ReturnsModal({
+  isOpen,
+  onClose,
+  items,
+  onReturn,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  items: Equipment[];
+  onReturn: (itemIds: string[], dueDate?: Date | null) => Promise<void>;
+}) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [useNewDueDate, setUseNewDueDate] = useState(false);
+  const [dueDateInput, setDueDateInput] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const sentItems = items.filter((item) => getRepairLocationType(item.location) === "sent");
+  const allSelected = sentItems.length > 0 && selectedIds.length === sentItems.length;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedIds([]);
+    setUseNewDueDate(false);
+    setDueDateInput("");
+    setIsSubmitting(false);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]));
+  };
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(sentItems.map((item) => item.id));
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedIds.length) {
+      toast.error("Select at least one item to return.");
+      return;
+    }
+    let dueDate: Date | null | undefined;
+    if (useNewDueDate) {
+      const parsed = parseDueDateString(dueDateInput);
+      if (!parsed) {
+        toast.error("Due Date must be MM/DD/YYYY.");
+        return;
+      }
+      dueDate = parsed;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onReturn(selectedIds, dueDate);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Returns</h2>
+              <p className="text-xs text-muted-foreground">Select items returned from repair</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          {sentItems.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No items are currently sent for repairs.</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <button
+                  type="button"
+                  className="flex items-center gap-2"
+                  onClick={handleSelectAll}
+                >
+                  <Checkbox checked={allSelected} />
+                  <span>Select all</span>
+                </button>
+                <span>{selectedIds.length} selected</span>
+              </div>
+              <div className="max-h-64 overflow-auto space-y-2">
+                {sentItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs"
+                  >
+                    <Checkbox
+                      checked={selectedIds.includes(item.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onCheckedChange={() => toggleSelect(item.id)}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono">{item.id}</div>
+                      <div className="text-muted-foreground truncate">{item.name}</div>
+                    </div>
+                    {item.systemColor && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {item.systemColor} Sys
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>New Due Date?</Label>
+              <Switch checked={useNewDueDate} onCheckedChange={setUseNewDueDate} />
+            </div>
+            {useNewDueDate && (
+              <Input
+                placeholder="MM/DD/YYYY"
+                value={dueDateInput}
+                onChange={(event) => setDueDateInput(event.target.value)}
+              />
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting || sentItems.length === 0}>
+              {isSubmitting ? "Returning..." : "Return Selected"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function DueDatesModal({
+  isOpen,
+  onClose,
+  categories,
+  onApply,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  categories: string[];
+  onApply: (category: string, amount: number, unit: "months" | "years") => Promise<void>;
+}) {
+  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("6");
+  const [unit, setUnit] = useState<"months" | "years">("months");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCategory("");
+    setAmount("6");
+    setUnit("months");
+    setIsSubmitting(false);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async () => {
+    const trimmedCategory = category.trim();
+    const parsedAmount = Number(amount);
+    if (!trimmedCategory) {
+      toast.error("Select a category.");
+      return;
+    }
+    if (!parsedAmount || parsedAmount <= 0) {
+      toast.error("Enter a valid time amount.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onApply(trimmedCategory, parsedAmount, unit);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-md bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Due Dates</h2>
+              <p className="text-xs text-muted-foreground">Apply a due date to repair items by category</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Select value={category} onValueChange={setCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {option}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Time Until Due</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                />
+                <Select value={unit} onValueChange={(value) => setUnit(value as "months" | "years")}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="months">Months</SelectItem>
+                    <SelectItem value="years">Years</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Applying..." : "Apply"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ActivityLogModal({
   isOpen,
   onClose,
@@ -2885,6 +3277,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
   const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [isReturnsOpen, setIsReturnsOpen] = useState(false);
+  const [isDueDatesOpen, setIsDueDatesOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [recentHistory, setRecentHistory] = useState<Array<{
     id: string;
@@ -2931,6 +3325,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         .filter((color): color is string => !!color && color.trim().length > 0)
     )
   );
+  const categoryOptions = Array.from(
+    new Set(equipment.map((item) => item.category).filter((category) => category && category.trim().length > 0))
+  ).sort((a, b) => a.localeCompare(b));
   const bagColorOptions = Array.from(
     new Set(
       equipment
@@ -3230,6 +3627,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const inventorySource = canManageEquipment ? filteredEquipment : equipment;
   const inventoryFiltered = inventorySource.filter((item) => {
     if (inventoryColorFilter === "All") return true;
+    if (inventoryColorFilter === "Needs Cal") {
+      const status = getDueDateStatus(item.dueDate);
+      return status === "yellow" || status === "red";
+    }
     const effectiveColor = item.temporarySystemColor || item.systemColor || "Unassigned";
     return effectiveColor === inventoryColorFilter;
   });
@@ -3337,56 +3738,65 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
-  const handleReturnFromRepairs = (item: Equipment) => {
-    const replacement = item.replacementId
-      ? equipment.find((entry) => entry.id === item.replacementId)
-      : undefined;
-
-    updateEquipment.mutate(
-      {
-        id: item.id,
-        data: {
-          status: "available",
-          location: "Shop",
-          workOrder: null,
-          checkedOutBy: null,
-          checkedOutAt: null,
-          replacementId: null,
-        },
-      },
-      {
-        onSuccess: () => {
-          if (!replacement) {
-            toast.success(`${item.id} returned to shop.`);
-            return;
+  const handleBulkReturnFromRepairs = async (itemIds: string[], dueDate?: Date | null) => {
+    if (!itemIds.length) return;
+    try {
+      await Promise.all(
+        itemIds.map(async (id) => {
+          const item = equipment.find((entry) => entry.id === id);
+          if (!item) return;
+          const payload: Partial<InsertEquipment> = {
+            status: "available",
+            location: "Shop",
+            workOrder: null,
+            checkedOutBy: null,
+            checkedOutAt: null,
+            replacementId: null,
+          };
+          if (typeof dueDate !== "undefined") {
+            payload.dueDate = dueDate;
           }
-          updateEquipment.mutate(
-            {
-              id: replacement.id,
-              data: {
-                temporarySystemColor: null,
-                swappedFromId: null,
-                status: "available",
-                workOrder: null,
-                checkedOutBy: null,
-                checkedOutAt: null,
-              },
-            },
-            {
-              onSuccess: () => {
-                toast.success(`${item.id} returned to shop. ${replacement.id} restored.`);
-              },
-              onError: (error) => {
-                toast.error(`Failed to restore ${replacement.id}: ${error.message}`);
-              },
-            }
-          );
-        },
-        onError: (error) => {
-          toast.error(`Failed to update ${item.id}: ${error.message}`);
-        },
-      }
+          await api.equipment.update(id, payload);
+          if (item.replacementId) {
+            await api.equipment.update(item.replacementId, {
+              temporarySystemColor: null,
+              swappedFromId: null,
+              status: "available",
+              workOrder: null,
+              checkedOutBy: null,
+              checkedOutAt: null,
+            });
+          }
+        })
+      );
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`Returned ${itemIds.length} item(s) to Shop.`);
+    } catch {
+      toast.error("Failed to return items.");
+    }
+  };
+
+  const handleApplyDueDates = async (category: string, amount: number, unit: "months" | "years") => {
+    const repairItemsForCategory = equipment.filter(
+      (item) => item.category === category && isRepairLocation(item.location)
     );
+    if (repairItemsForCategory.length === 0) {
+      toast.error("No repair items found for that category.");
+      return;
+    }
+    const monthsToAdd = unit === "years" ? amount * 12 : amount;
+    const newDueDate = addMonths(new Date(), monthsToAdd);
+    try {
+      await Promise.all(
+        repairItemsForCategory.map((item) =>
+          api.equipment.update(item.id, { dueDate: newDueDate })
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`Applied due dates to ${repairItemsForCategory.length} item(s).`);
+    } catch {
+      toast.error("Failed to apply due dates.");
+    }
   };
 
   const handleReturnBorrowed = async (borrowedItem: Equipment) => {
@@ -3829,16 +4239,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                               >
                                 Send to Repairs
                               </Button>
-                              {isRepairLocation(getLocation(item)) && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 text-[10px]"
-                                  onClick={() => handleReturnFromRepairs(item)}
-                                >
-                                  Is it back?
-                                </Button>
-                              )}
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -3873,6 +4273,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   <Badge variant="outline" className="text-[10px] font-mono">
                     {repairSystems.length}
                   </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsReturnsOpen(true)}
+                    disabled={repairItems.length === 0}
+                  >
+                    Returns
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => togglePanel("repairs")}>
                     {expandedPanels.repairs ? "Hide" : "View"}
                   </Button>
@@ -3898,14 +4306,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                         <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
                           <span className="font-mono">{item.id}</span>
                           <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 px-2 text-[10px]"
-                            onClick={() => handleReturnFromRepairs(item)}
-                          >
-                            Is it back?
-                          </Button>
                         </div>
                       ))}
                     </div>
@@ -4025,6 +4425,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="All">All Systems</SelectItem>
+                      <SelectItem value="Needs Cal">Needs Cal</SelectItem>
                       {systemColorOptions.map((color) => (
                         <SelectItem key={color} value={color}>
                           {color} System
@@ -4046,6 +4447,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {canManageEquipment && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setIsDueDatesOpen(true)}
+                    >
+                      Due Dates
+                    </Button>
+                  )}
                 </div>
             </div>
 
@@ -4169,6 +4580,22 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             locationOptions={locationOptions}
             onAddLocation={handleAddLocation}
             onTransfer={handleTransferSystem}
+          />
+        )}
+        {isReturnsOpen && (
+          <ReturnsModal
+            isOpen={isReturnsOpen}
+            onClose={() => setIsReturnsOpen(false)}
+            items={equipment}
+            onReturn={handleBulkReturnFromRepairs}
+          />
+        )}
+        {isDueDatesOpen && (
+          <DueDatesModal
+            isOpen={isDueDatesOpen}
+            onClose={() => setIsDueDatesOpen(false)}
+            categories={categoryOptions}
+            onApply={handleApplyDueDates}
           />
         )}
         {isActivityOpen && (

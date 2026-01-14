@@ -5,6 +5,31 @@ import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from 
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 
+const parseDueDateString = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes("-")) {
+    const parsedIso = new Date(trimmed);
+    if (!Number.isNaN(parsedIso.getTime())) {
+      return parsedIso;
+    }
+  }
+  const [monthRaw, dayRaw, yearRaw] = trimmed.split("/");
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const year = Number(yearRaw);
+  if (!month || !day || !year) return null;
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -38,7 +63,20 @@ export async function registerRoutes(
   // Create equipment
   app.post("/api/equipment", async (req, res) => {
     try {
-      const validatedData = insertEquipmentSchema.parse(req.body);
+      const payload = { ...req.body } as Partial<InsertEquipment>;
+      if (typeof payload.dueDate === "string") {
+        const trimmed = payload.dueDate.trim();
+        if (!trimmed) {
+          delete payload.dueDate;
+        } else {
+          const parsed = parseDueDateString(trimmed);
+          if (!parsed) {
+            return res.status(400).json({ error: "Due Date must be MM/DD/YYYY." });
+          }
+          payload.dueDate = parsed;
+        }
+      }
+      const validatedData = insertEquipmentSchema.parse(payload);
       const equipment = await storage.createEquipment(validatedData);
       res.status(201).json(equipment);
     } catch (error) {
@@ -55,6 +93,18 @@ export async function registerRoutes(
     try {
       const currentId = req.params.id;
       const updatePayload = { ...req.body } as Partial<InsertEquipment>;
+      if (typeof updatePayload.dueDate === "string") {
+        const trimmed = updatePayload.dueDate.trim();
+        if (!trimmed) {
+          updatePayload.dueDate = null;
+        } else {
+          const parsed = parseDueDateString(trimmed);
+          if (!parsed) {
+            return res.status(400).json({ error: "Due Date must be MM/DD/YYYY." });
+          }
+          updatePayload.dueDate = parsed;
+        }
+      }
       const requestedIdRaw =
         typeof updatePayload.id === "string" ? updatePayload.id.trim() : "";
 
