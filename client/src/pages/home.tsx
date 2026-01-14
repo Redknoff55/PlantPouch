@@ -675,6 +675,7 @@ function ActionModal({
   isOpen, 
   onClose,
   canManageEquipment,
+  allEquipment,
   locationOptions,
   systemColorOptions,
   onAddLocation,
@@ -686,6 +687,7 @@ function ActionModal({
   isOpen: boolean; 
   onClose: () => void;
   canManageEquipment: boolean;
+  allEquipment: Equipment[];
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
@@ -696,6 +698,7 @@ function ActionModal({
   const checkout = useCheckout();
   const checkin = useCheckin();
   const deleteEquipment = useDeleteEquipment();
+  const updateEquipment = useUpdateEquipment();
   const [isEditing, setIsEditing] = useState(false);
   
   // Checkout State
@@ -708,6 +711,7 @@ function ActionModal({
   const [notes, setNotes] = useState("");
   const [isBroken, setIsBroken] = useState(false);
   const [replacementId, setReplacementId] = useState("");
+  const [repairAction, setRepairAction] = useState<"shop" | "system">("shop");
 
   if (!isOpen || !equipment) return null;
 
@@ -720,6 +724,13 @@ function ActionModal({
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrPayload)}`;
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
+  const isRepairItem = isRepairLocation(equipment.location);
+  const systemComputer = equipment.systemColor
+    ? allEquipment.find(
+        (item) => item.category === "Computer" && item.systemColor === equipment.systemColor
+      )
+    : null;
+  const systemLocation = systemComputer?.location || "Shop";
 
   const handleSubmit = () => {
     if (isCheckingOut) {
@@ -750,6 +761,7 @@ function ActionModal({
     setNotes("");
     setIsBroken(false);
     setReplacementId("");
+    setRepairAction("shop");
   };
 
   useEffect(() => {
@@ -874,6 +886,78 @@ function ActionModal({
                 )}
 
                 <div className="pt-4 border-t border-border">
+                    {canManageEquipment && isRepairItem && (
+                      <div className="mb-6 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                        <div className="text-xs font-semibold uppercase text-muted-foreground">Repair Actions</div>
+                        <div className="space-y-2">
+                          <Label>Return Action</Label>
+                          <Select value={repairAction} onValueChange={(value) => setRepairAction(value as "shop" | "system")}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Choose return action" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="shop">Send to Shop</SelectItem>
+                              <SelectItem value="system">Send to System</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => {
+                            if (repairAction === "system") {
+                              if (!equipment.systemColor) {
+                                toast.error("This item is not assigned to a system.");
+                                return;
+                              }
+                              updateEquipment.mutate(
+                                {
+                                  id: equipment.id,
+                                  data: {
+                                    location: systemLocation,
+                                    status: "available",
+                                    workOrder: null,
+                                    checkedOutBy: null,
+                                    checkedOutAt: null,
+                                  },
+                                },
+                                {
+                                  onSuccess: () => {
+                                    toast.success(`Returned ${equipment.id} to ${systemLocation}.`);
+                                  },
+                                  onError: (error) => {
+                                    toast.error(`Failed to update ${equipment.id}: ${error.message}`);
+                                  },
+                                }
+                              );
+                              return;
+                            }
+                            updateEquipment.mutate(
+                              {
+                                id: equipment.id,
+                                data: {
+                                  location: "Shop",
+                                  status: "available",
+                                  workOrder: null,
+                                  checkedOutBy: null,
+                                  checkedOutAt: null,
+                                },
+                              },
+                              {
+                                onSuccess: () => {
+                                  toast.success(`${equipment.id} returned to Shop.`);
+                                },
+                                onError: (error) => {
+                                  toast.error(`Failed to update ${equipment.id}: ${error.message}`);
+                                },
+                              }
+                            );
+                          }}
+                        >
+                          Apply Return
+                        </Button>
+                      </div>
+                    )}
                     {/* Action Form */}
                     {isBrokenState ? (
                         <div className="text-center py-4 space-y-4">
@@ -4636,6 +4720,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 isOpen={!!selectedEquipmentId} 
                 onClose={() => setSelectedEquipmentId(null)}
                 canManageEquipment={canManageEquipment}
+                allEquipment={equipment}
                 locationOptions={locationOptions}
                 systemColorOptions={systemColorOptions}
                 onAddLocation={handleAddLocation}
