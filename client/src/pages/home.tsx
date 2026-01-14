@@ -47,6 +47,32 @@ import { branding } from "@/config/branding";
 import { brandingStorageKey, loadBrandingFromStorage, type BrandingState } from "@/lib/branding";
 import type { IScannerControls } from "@zxing/browser";
 
+const normalizeLocation = (location?: string | null) => (location ?? "").trim().toLowerCase();
+
+const getRepairLocationType = (location?: string | null) => {
+  const normalized = normalizeLocation(location);
+  if (!normalized) return null;
+  if (normalized === "waiting on repairs") return "waiting";
+  if (
+    normalized === "sent for repairs" ||
+    normalized === "repairs" ||
+    normalized === "out for repair" ||
+    normalized === "out for repairs"
+  ) {
+    return "sent";
+  }
+  return null;
+};
+
+const isRepairLocation = (location?: string | null) => getRepairLocationType(location) !== null;
+
+const getRepairLocationLabel = (location?: string | null) => {
+  const type = getRepairLocationType(location);
+  if (type === "waiting") return "Waiting on repairs";
+  if (type === "sent") return "Sent for repairs";
+  return null;
+};
+
 // --- Components ---
 
 function StatusBadge({ status }: { status: string }) {
@@ -871,7 +897,7 @@ function SystemCheckoutModal({
 
   const isItemAvailable = (item: Equipment) =>
     item.status === "available" &&
-    (item.location ?? "Shop") !== "Repairs" &&
+    !isRepairLocation(item.location) &&
     !item.temporarySystemColor;
 
   // Get unique system colors
@@ -918,7 +944,7 @@ function SystemCheckoutModal({
     item.status === "available" &&
     !item.temporarySystemColor &&
     (item.location || "Shop") === checkoutLocation &&
-    (item.location || "Shop") !== "Repairs";
+    !isRepairLocation(item.location);
   const combinedItems = [
     ...(selectedComputer ? [selectedComputer] : []),
     ...bagItems,
@@ -938,7 +964,8 @@ function SystemCheckoutModal({
   };
 
   const getMissingLabel = (item: Equipment) => {
-    if (item.location === "Repairs") return "repairs";
+    const repairLabel = getRepairLocationLabel(item.location);
+    if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
     if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
@@ -2519,10 +2546,11 @@ function TransferSystemModal({
   }, [isOpen]);
 
   const isTransferable = (item: Equipment) =>
-    item.status === "available" && (item.location ?? "Shop") !== "Repairs";
+    item.status === "available" && !isRepairLocation(item.location);
 
   const getMissingLabel = (item: Equipment) => {
-    if (item.location === "Repairs") return "repairs";
+    const repairLabel = getRepairLocationLabel(item.location);
+    if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
     if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
@@ -2819,6 +2847,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     good: false,
     broken: false,
     repairs: false,
+    waiting: false,
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
@@ -2861,6 +2890,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const locationOptions = Array.from(
     new Set([
       "Shop",
+      "Sent for Repairs",
+      "Waiting on Repairs",
       "Repairs",
       ...equipment.map((item) => item.location || "Shop"),
       ...customLocations,
@@ -2959,7 +2990,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   );
 
   const repairSystems = systemsByColor.filter((system) =>
-    system.items.some((item) => getLocation(item) === "Repairs")
+    system.items.some((item) => getRepairLocationType(item.location) === "sent")
+  );
+  const waitingSystems = systemsByColor.filter((system) =>
+    system.items.some((item) => getRepairLocationType(item.location) === "waiting")
   );
 
   const getReplacementLabel = (item: Equipment) => {
@@ -3009,7 +3043,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     equipment.filter((item) => item.status === "broken")
   );
   const repairItems = groupItemsBySystem(
-    equipment.filter((item) => getLocation(item) === "Repairs")
+    equipment.filter((item) => getRepairLocationType(item.location) === "sent")
+  );
+  const waitingItems = groupItemsBySystem(
+    equipment.filter((item) => getRepairLocationType(item.location) === "waiting")
   );
 
   const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -3144,11 +3181,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   const isBagItemAvailable = (item: Equipment) =>
     item.status === "available" &&
-    (item.location ?? "Shop") !== "Repairs" &&
+    !isRepairLocation(item.location) &&
     !item.temporarySystemColor;
 
   const getBagItemStatus = (item: Equipment) => {
-    if (item.location === "Repairs") return "Repairs";
+    const repairLabel = getRepairLocationLabel(item.location);
+    if (repairLabel) return repairLabel;
     if (item.status === "broken") return "Broken";
     if (item.status === "checked_out") return "Checked out";
     if (item.temporarySystemColor) return `Borrowed to ${item.temporarySystemColor}`;
@@ -3237,7 +3275,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       {
         id: item.id,
         data: {
-          location: "Repairs",
+          location: "Sent for Repairs",
         },
       },
       {
@@ -3764,7 +3802,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                               >
                                 Send to Repairs
                               </Button>
-                              {getLocation(item) === "Repairs" && (
+                              {isRepairLocation(getLocation(item)) && (
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -3814,7 +3852,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 </div>
               </div>
               {repairSystems.length === 0 ? (
-                <div className="text-xs text-muted-foreground">Nothing out for repair.</div>
+                <div className="text-xs text-muted-foreground">Nothing sent for repairs.</div>
               ) : (
                 <div className="space-y-1">
                   {repairSystems.map((system) => (
@@ -3851,7 +3889,47 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Borrowed</h3>
+                <h3 className="text-sm font-semibold">Waiting on Repairs</h3>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] font-mono">
+                    {waitingSystems.length}
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={() => togglePanel("waiting")}>
+                    {expandedPanels.waiting ? "Hide" : "View"}
+                  </Button>
+                </div>
+              </div>
+              {waitingSystems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">Nothing waiting on repairs.</div>
+              ) : (
+                <div className="space-y-1">
+                  {waitingSystems.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
+                    </div>
+                  ))}
+                </div>
+              )}
+              {expandedPanels.waiting && (
+                <div className="mt-3 space-y-2">
+                  {waitingItems.map((group) => (
+                    <div key={group.color} className="space-y-1">
+                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                      {group.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs">
+                          <span className="font-mono">{item.id}</span>
+                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Borrowed components</h3>
                 <Badge variant="outline" className="text-[10px] font-mono">
                   {equipment.filter((item) => item.swappedFromId).length}
                 </Badge>
