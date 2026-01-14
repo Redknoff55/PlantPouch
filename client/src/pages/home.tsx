@@ -118,6 +118,13 @@ const formatDueDateValue = (dueDate?: string | Date | null) => {
   return format(date, "MM/dd/yyyy");
 };
 
+const csvEscape = (value: string) => {
+  if (value.includes('"') || value.includes(",") || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+};
+
 // --- Components ---
 
 function StatusBadge({ status }: { status: string }) {
@@ -3799,6 +3806,50 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
+  const handleExportCsv = () => {
+    const headers = [
+      "id",
+      "name",
+      "category",
+      "systemColor",
+      "location",
+      "Due Date",
+      "status",
+      "workOrder",
+      "checkedOutBy",
+      "checkedOutAt",
+      "notes",
+    ];
+    const rows = equipment.map((item) => [
+      item.id,
+      item.name,
+      item.category,
+      item.systemColor ?? "",
+      item.location ?? "Shop",
+      formatDueDateValue(item.dueDate),
+      item.status,
+      item.workOrder ?? "",
+      item.checkedOutBy ?? "",
+      item.checkedOutAt ? format(new Date(item.checkedOutAt), "MM/dd/yyyy") : "",
+      item.notes ?? "",
+    ]);
+    const lines = [
+      headers.map(csvEscape).join(","),
+      ...rows.map((row) => row.map((value) => csvEscape(String(value))).join(",")),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const nowLabel = format(new Date(), "yyyyMMdd-HHmm");
+    const filename = `plantpouch-export-${nowLabel}.csv`;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleReturnBorrowed = async (borrowedItem: Equipment) => {
     const brokenItem = borrowedItem.swappedFromId
       ? equipment.find((entry) => entry.id === borrowedItem.swappedFromId)
@@ -4448,14 +4499,24 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </SelectContent>
                   </Select>
                   {canManageEquipment && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => setIsDueDatesOpen(true)}
-                    >
-                      Due Dates
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setIsDueDatesOpen(true)}
+                      >
+                        Due Dates
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={handleExportCsv}
+                      >
+                        Export CSV
+                      </Button>
+                    </>
                   )}
                 </div>
             </div>
