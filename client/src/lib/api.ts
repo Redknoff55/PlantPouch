@@ -32,7 +32,18 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Failed to update equipment');
+      if (!res.ok) {
+        let message = 'Failed to update equipment';
+        try {
+          const body = await res.json();
+          if (body?.error) {
+            message = body.error;
+          }
+        } catch {
+          // Ignore JSON parsing errors and keep the default message.
+        }
+        throw new Error(message);
+      }
       return res.json();
     },
 

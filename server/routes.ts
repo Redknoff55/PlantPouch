@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertEquipmentSchema, insertSystemSchema } from "@shared/schema";
+import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -53,7 +53,42 @@ export async function registerRoutes(
   // Update equipment
   app.patch("/api/equipment/:id", async (req, res) => {
     try {
-      const equipment = await storage.updateEquipment(req.params.id, req.body);
+      const currentId = req.params.id;
+      const updatePayload = { ...req.body } as Partial<InsertEquipment>;
+      const requestedIdRaw =
+        typeof updatePayload.id === "string" ? updatePayload.id.trim() : "";
+
+      if (typeof updatePayload.id !== "undefined") {
+        if (!requestedIdRaw) {
+          return res.status(400).json({ error: "Equipment ID is required." });
+        }
+        if (requestedIdRaw !== currentId) {
+          const existing = await storage.getEquipment(currentId);
+          if (!existing) {
+            return res.status(404).json({ error: "Equipment not found" });
+          }
+          const conflict = await storage.getEquipment(requestedIdRaw);
+          if (conflict) {
+            return res.status(400).json({ error: "Another item already uses that ID." });
+          }
+          const history = await storage.getEquipmentHistory(currentId);
+          if (history.length > 0 || existing.replacementId || existing.swappedFromId) {
+            return res.status(400).json({ error: "Cannot change ID once linked to history or replacements." });
+          }
+          const equipment = await storage.getAllEquipment();
+          const isLinked = equipment.some(
+            (item) => item.replacementId === currentId || item.swappedFromId === currentId
+          );
+          if (isLinked) {
+            return res.status(400).json({ error: "Cannot change ID once linked to history or replacements." });
+          }
+          updatePayload.id = requestedIdRaw;
+        } else {
+          delete updatePayload.id;
+        }
+      }
+
+      const equipment = await storage.updateEquipment(currentId, updatePayload);
       if (!equipment) {
         return res.status(404).json({ error: "Equipment not found" });
       }

@@ -384,6 +384,7 @@ function EditEquipmentModal({
   locationOptions,
   systemColorOptions,
   onAddLocation,
+  onIdUpdated,
 }: {
   equipment: Equipment;
   isOpen: boolean;
@@ -391,9 +392,11 @@ function EditEquipmentModal({
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
+  onIdUpdated?: (newId: string) => void;
 }) {
   const updateEquipment = useUpdateEquipment();
   const [formData, setFormData] = useState({
+    id: equipment.id,
     name: equipment.name,
     category: equipment.category,
     systemColor: equipment.systemColor ?? "",
@@ -404,6 +407,7 @@ function EditEquipmentModal({
   useEffect(() => {
     if (!isOpen) return;
     setFormData({
+      id: equipment.id,
       name: equipment.name,
       category: equipment.category,
       systemColor: equipment.systemColor ?? "",
@@ -414,23 +418,31 @@ function EditEquipmentModal({
   if (!isOpen) return null;
 
   const handleSubmit = () => {
-    if (!formData.name || !formData.category) {
-      toast.error("Name and category are required.");
+    const nextId = formData.id.trim();
+    if (!nextId || !formData.name || !formData.category) {
+      toast.error("ID, name, and category are required.");
       return;
+    }
+    const payload: Partial<InsertEquipment> = {
+      name: formData.name,
+      category: formData.category,
+      systemColor: formData.systemColor || undefined,
+      location: formData.location || "Shop",
+    };
+    if (nextId !== equipment.id) {
+      payload.id = nextId;
     }
     updateEquipment.mutate(
       {
         id: equipment.id,
-        data: {
-          name: formData.name,
-          category: formData.category,
-          systemColor: formData.systemColor || undefined,
-          location: formData.location || "Shop",
-        },
+        data: payload,
       },
       {
         onSuccess: () => {
-          toast.success(`Updated ${equipment.id}.`);
+          toast.success(`Updated ${nextId}.`);
+          if (nextId !== equipment.id) {
+            onIdUpdated?.(nextId);
+          }
           onClose();
         },
         onError: (error) => {
@@ -461,6 +473,18 @@ function EditEquipmentModal({
           </div>
 
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Equipment ID *</Label>
+              <Input
+                value={formData.id}
+                onChange={(e) => setFormData((prev) => ({ ...prev, id: e.target.value }))}
+                className="font-mono"
+              />
+              <p className="text-xs text-muted-foreground">
+                ID changes are blocked if this item has history or replacement links.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Equipment Name *</Label>
               <Input
@@ -544,7 +568,7 @@ function EditEquipmentModal({
               <Button
                 className="flex-[2] h-12 text-lg font-semibold"
                 onClick={handleSubmit}
-                disabled={!formData.name || !formData.category || updateEquipment.isPending}
+                disabled={!formData.id || !formData.name || !formData.category || updateEquipment.isPending}
               >
                 {updateEquipment.isPending ? "Saving..." : "Save Changes"}
               </Button>
@@ -566,6 +590,7 @@ function ActionModal({
   onAddLocation,
   onAssignReplacement,
   replacementCandidates,
+  onIdUpdated,
 }: { 
   equipment: Equipment | null; 
   isOpen: boolean; 
@@ -576,6 +601,7 @@ function ActionModal({
   onAddLocation: (value: string) => void;
   onAssignReplacement: (brokenItem: Equipment, replacementItem: Equipment) => void;
   replacementCandidates: Equipment[];
+  onIdUpdated?: (newId: string) => void;
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
@@ -866,6 +892,7 @@ function ActionModal({
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
             onAddLocation={onAddLocation}
+            onIdUpdated={onIdUpdated}
           />
         )}
     </div>
@@ -4187,6 +4214,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 onAddLocation={handleAddLocation}
                 onAssignReplacement={handleAssignReplacement}
                 replacementCandidates={selectedEquipment ? getReplacementCandidates(selectedEquipment) : []}
+                onIdUpdated={(newId) => setSelectedEquipmentId(newId)}
             />
         )}
       </AnimatePresence>
