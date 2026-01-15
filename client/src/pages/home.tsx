@@ -4277,7 +4277,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         {canManageEquipment && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <Tabs defaultValue="good">
-              <TabsList className="flex flex-wrap gap-2">
+              <TabsList className="flex w-full flex-nowrap gap-2 overflow-x-auto py-1">
                 <TabsTrigger value="good">Good ({systemStatuses.length})</TabsTrigger>
                 <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
                 <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
