@@ -32,7 +32,7 @@ const parseDueDateString = (value: string) => {
   return date;
 };
 
-const brandingPath = path.join(process.cwd(), "server", "branding.json");
+const brandingPath = path.join(process.cwd(), "branding.json");
 
 const loadBrandingOverrides = async () => {
   try {

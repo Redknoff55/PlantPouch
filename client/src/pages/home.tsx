@@ -3384,6 +3384,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
   const [brandingState, setBrandingState] = useState<BrandingState>(branding);
   const [brandingLoaded, setBrandingLoaded] = useState(false);
+  const brandingDirtyRef = useRef(false);
   const canManageEquipment = adminEnabled && isAdminMode;
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -3627,7 +3628,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .get()
       .then((overrides) => {
         if (!active) return;
-        setBrandingState(mergeBranding(overrides));
+        if (!brandingDirtyRef.current) {
+          setBrandingState(mergeBranding(overrides));
+        }
         setBrandingLoaded(true);
       })
       .catch(() => {
@@ -4648,7 +4651,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             isOpen={isBrandingOpen}
             onClose={() => setIsBrandingOpen(false)}
             value={brandingState}
-            onChange={setBrandingState}
+            onChange={(next) => {
+              brandingDirtyRef.current = true;
+              setBrandingState(next);
+            }}
             onReset={handleResetBranding}
           />
         )}

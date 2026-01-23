@@ -2,6 +2,7 @@ node_modules
 dist
 .DS_Store
 server/public
+branding.json
 server/branding.json
 vite.config.ts.*
 *.tar.gz
