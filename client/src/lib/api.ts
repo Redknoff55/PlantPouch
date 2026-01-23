@@ -3,6 +3,30 @@ import type { Equipment, InsertEquipment, System, InsertSystem } from "@shared/s
 const API_BASE = "/api";
 
 export const api = {
+  branding: {
+    get: async (): Promise<Partial<{
+      appName: string;
+      version: string;
+      logo: { text?: string; imageSrc?: string; alt?: string };
+    }>> => {
+      const res = await fetch(`${API_BASE}/branding`);
+      if (!res.ok) throw new Error("Failed to fetch branding");
+      return res.json();
+    },
+    save: async (data: Partial<{
+      appName: string;
+      version: string;
+      logo: { text?: string; imageSrc?: string; alt?: string };
+    }>): Promise<void> => {
+      const res = await fetch(`${API_BASE}/branding`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to save branding");
+      await res.json();
+    },
+  },
   equipment: {
     getAll: async (): Promise<Equipment[]> => {
       const res = await fetch(`${API_BASE}/equipment`);

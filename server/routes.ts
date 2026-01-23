@@ -4,6 +4,8 @@ import { storage } from "./storage";
 import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from "@shared/schema";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { readFile, writeFile } from "fs/promises";
+import path from "path";
 
 const parseDueDateString = (value: string) => {
   const trimmed = value.trim();
@@ -30,10 +32,46 @@ const parseDueDateString = (value: string) => {
   return date;
 };
 
+const brandingPath = path.join(process.cwd(), "server", "branding.json");
+
+const loadBrandingOverrides = async () => {
+  try {
+    const raw = await readFile(brandingPath, "utf-8");
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+
+const saveBrandingOverrides = async (overrides: Record<string, unknown>) => {
+  await writeFile(brandingPath, JSON.stringify(overrides, null, 2), "utf-8");
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.get("/api/branding", async (_req, res) => {
+    try {
+      const overrides = await loadBrandingOverrides();
+      res.json(overrides);
+    } catch (error) {
+      console.error("Error loading branding:", error);
+      res.status(500).json({ error: "Failed to load branding" });
+    }
+  });
+
+  app.put("/api/branding", async (req, res) => {
+    try {
+      const overrides = req.body ?? {};
+      await saveBrandingOverrides(overrides);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error saving branding:", error);
+      res.status(500).json({ error: "Failed to save branding" });
+    }
+  });
   
   // Get all equipment
   app.get("/api/equipment", async (req, res) => {
@@ -136,6 +174,11 @@ export async function registerRoutes(
         } else {
           delete updatePayload.id;
         }
+      }
+
+      if (updatePayload.location === "Shop" && updatePayload.status === "available") {
+        updatePayload.temporarySystemColor = null;
+        updatePayload.swappedFromId = null;
       }
 
       const equipment = await storage.updateEquipment(currentId, updatePayload);

@@ -45,7 +45,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
-import { brandingStorageKey, loadBrandingFromStorage, type BrandingState } from "@/lib/branding";
+import { mergeBranding, type BrandingState } from "@/lib/branding";
 import type { IScannerControls } from "@zxing/browser";
 
 const normalizeLocation = (location?: string | null) => (location ?? "").trim().toLowerCase();
@@ -683,6 +683,7 @@ function ActionModal({
   onAssignReplacement,
   replacementCandidates,
   onIdUpdated,
+  onReturnBorrowed,
 }: { 
   equipment: Equipment | null; 
   isOpen: boolean; 
@@ -695,6 +696,7 @@ function ActionModal({
   onAssignReplacement: (brokenItem: Equipment, replacementItem: Equipment) => void;
   replacementCandidates: Equipment[];
   onIdUpdated?: (newId: string) => void;
+  onReturnBorrowed?: (item: Equipment) => void;
 }) {
   const checkout = useCheckout();
   const checkin = useCheckin();
@@ -726,6 +728,7 @@ function ActionModal({
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
   const isRepairItem = isRepairLocation(equipment.location);
+  const isBorrowedItem = !!equipment.swappedFromId;
   const getSystemReturnLocation = () => {
     if (!equipment.systemColor) return "Shop";
     const candidates = allEquipment.filter(
@@ -859,6 +862,22 @@ function ActionModal({
                         </span>
                         <p className="text-sm italic text-foreground/80">"{equipment.notes}"</p>
                     </div>
+                )}
+
+                {canManageEquipment && isBorrowedItem && (
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm space-y-2">
+                    <div className="text-xs font-semibold uppercase text-muted-foreground">Borrowed Item</div>
+                    <div className="text-xs text-muted-foreground">
+                      Borrowed to {equipment.temporarySystemColor ?? "system"}
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => onReturnBorrowed?.(equipment)}
+                    >
+                      Clear Borrowed State
+                    </Button>
+                  </div>
                 )}
 
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -3363,7 +3382,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(adminEnabled);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
-  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
+  const [brandingState, setBrandingState] = useState<BrandingState>(branding);
+  const [brandingLoaded, setBrandingLoaded] = useState(false);
   const canManageEquipment = adminEnabled && isAdminMode;
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -3602,12 +3622,32 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     : [];
 
   useEffect(() => {
-    try {
-      localStorage.setItem(brandingStorageKey, JSON.stringify(brandingState));
-    } catch {
-      // Ignore localStorage errors.
-    }
-  }, [brandingState]);
+    let active = true;
+    api.branding
+      .get()
+      .then((overrides) => {
+        if (!active) return;
+        setBrandingState(mergeBranding(overrides));
+        setBrandingLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setBrandingLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!brandingLoaded) return;
+    const timeout = setTimeout(() => {
+      api.branding.save(brandingState).catch(() => {
+        toast.error("Failed to save branding.");
+      });
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [brandingLoaded, brandingState]);
 
   useEffect(() => {
     try {
@@ -3959,11 +3999,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   const handleResetBranding = () => {
     setBrandingState(branding);
-    try {
-      localStorage.removeItem(brandingStorageKey);
-    } catch {
-      // Ignore localStorage errors.
-    }
   };
 
   useEffect(() => {
@@ -4702,6 +4737,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 onAssignReplacement={handleAssignReplacement}
                 replacementCandidates={selectedEquipment ? getReplacementCandidates(selectedEquipment) : []}
                 onIdUpdated={(newId) => setSelectedEquipmentId(newId)}
+                onReturnBorrowed={handleReturnBorrowed}
             />
         )}
       </AnimatePresence>

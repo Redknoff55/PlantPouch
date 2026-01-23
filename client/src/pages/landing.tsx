@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { branding } from "@/config/branding";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
-import { loadBrandingFromStorage } from "@/lib/branding";
+import { mergeBranding } from "@/lib/branding";
+import { api } from "@/lib/api";
 
 function AdminAccessModal({
   isOpen,
@@ -105,7 +106,23 @@ function AdminAccessModal({
 export default function Landing() {
   const [, setLocation] = useLocation();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const brandingState = useMemo(() => loadBrandingFromStorage(), []);
+  const [brandingState, setBrandingState] = useState(branding);
+
+  useEffect(() => {
+    let active = true;
+    api.branding
+      .get()
+      .then((overrides) => {
+        if (!active) return;
+        setBrandingState(mergeBranding(overrides));
+      })
+      .catch(() => {
+        // Ignore branding fetch errors on the landing page.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
