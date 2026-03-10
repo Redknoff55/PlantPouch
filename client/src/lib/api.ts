@@ -83,6 +83,7 @@ export const api = {
       equipmentIds: string[];
       workOrder: string;
       techName: string;
+      valveNumber?: string;
     }): Promise<Equipment[]> => {
       const res = await fetch(`${API_BASE}/equipment/checkout/system`, {
         method: 'POST',
@@ -106,7 +107,10 @@ export const api = {
       return res.json();
     },
 
-    checkout: async (id: string, params: { workOrder: string; techName: string }): Promise<Equipment> => {
+    checkout: async (
+      id: string,
+      params: { workOrder: string; techName: string; valveNumber?: string }
+    ): Promise<Equipment> => {
       const res = await fetch(`${API_BASE}/equipment/${id}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

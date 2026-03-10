@@ -7,3 +7,5 @@ server/branding.json
 vite.config.ts.*
 *.tar.gz
 .env
+.npm-cache/
+.tools/

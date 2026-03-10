@@ -48,6 +48,7 @@ export function useCheckoutSystem() {
       equipmentIds: string[];
       workOrder: string;
       techName: string;
+      valveNumber?: string;
     }) => api.equipment.checkoutSystem(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
@@ -71,7 +72,15 @@ export function useCheckinByWorkOrder() {
 export function useCheckout() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...params }: { id: string; workOrder: string; techName: string }) =>
+    mutationFn: ({
+      id,
+      ...params
+    }: {
+      id: string;
+      workOrder: string;
+      techName: string;
+      valveNumber?: string;
+    }) =>
       api.equipment.checkout(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });

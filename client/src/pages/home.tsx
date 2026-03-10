@@ -693,7 +693,12 @@ function ActionModal({
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
-  onAssignReplacement: (brokenItem: Equipment, replacementItem: Equipment) => void;
+  onAssignReplacement: (
+    brokenItem: Equipment,
+    replacementItem: Equipment,
+    context: "broken" | "checked_out",
+    reason: string
+  ) => void | Promise<void>;
   replacementCandidates: Equipment[];
   onIdUpdated?: (newId: string) => void;
   onReturnBorrowed?: (item: Equipment) => void;
@@ -706,6 +711,7 @@ function ActionModal({
   
   // Checkout State
   const [workOrder, setWorkOrder] = useState("");
+  const [valveNumber, setValveNumber] = useState("");
   const [techName, setTechName] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
   );
@@ -752,7 +758,13 @@ function ActionModal({
         toast.error("Enter your name before checking out.");
         return;
       }
-      checkout.mutate({ id: equipment.id, workOrder, techName: techName.trim() });
+      const trimmedValveNumber = valveNumber.trim();
+      checkout.mutate({
+        id: equipment.id,
+        workOrder,
+        techName: techName.trim(),
+        valveNumber: trimmedValveNumber || undefined,
+      });
     } else {
       checkin.mutate(
         { id: equipment.id, notes, isBroken },
@@ -761,7 +773,12 @@ function ActionModal({
             if (isBroken && replacementId) {
               const replacementItem = replacementCandidates.find((item) => item.id === replacementId);
               if (replacementItem) {
-                onAssignReplacement(equipment, replacementItem, "broken");
+                onAssignReplacement(
+                  equipment,
+                  replacementItem,
+                  "broken",
+                  "Reported broken during check-in"
+                );
               }
             }
           },
@@ -771,6 +788,7 @@ function ActionModal({
     onClose();
     // Reset state
     setWorkOrder("");
+    setValveNumber("");
     setTechName("");
     setNotes("");
     setIsBroken(false);
@@ -1025,6 +1043,15 @@ function ActionModal({
                                     autoFocus
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label>Valve # (Optional)</Label>
+                                <Input
+                                    placeholder="Enter valve number"
+                                    className="font-mono"
+                                    value={valveNumber}
+                                    onChange={(e) => setValveNumber(e.target.value)}
+                                />
+                            </div>
                             <Button 
                                 className="w-full h-12 text-lg font-semibold" 
                                 size="lg"
@@ -1117,6 +1144,7 @@ function SystemCheckoutModal({
   const [selectedBagColor, setSelectedBagColor] = useState<string>("");
   const [selectedComputerId, setSelectedComputerId] = useState<string>("");
   const [workOrder, setWorkOrder] = useState("");
+  const [valveNumber, setValveNumber] = useState("");
   const [techName, setTechName] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
   );
@@ -1237,7 +1265,14 @@ function SystemCheckoutModal({
     // Collect all final IDs to checkout
     const finalIds = Object.values(verifiedItems).filter((id) => !!id);
     
-    checkoutSystem.mutate({ systemColor: selectedComputerColor, equipmentIds: finalIds, workOrder, techName: techName.trim() });
+    const trimmedValveNumber = valveNumber.trim();
+    checkoutSystem.mutate({
+      systemColor: selectedComputerColor,
+      equipmentIds: finalIds,
+      workOrder,
+      techName: techName.trim(),
+      valveNumber: trimmedValveNumber || undefined,
+    });
     onClose();
   };
 
@@ -1478,6 +1513,15 @@ function SystemCheckoutModal({
                         className="font-mono text-lg"
                         value={workOrder}
                         onChange={(e) => setWorkOrder(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valve # (Optional)</Label>
+                    <Input
+                        placeholder="Enter valve number"
+                        className="font-mono text-lg"
+                        value={valveNumber}
+                        onChange={(e) => setValveNumber(e.target.value)}
                     />
                   </div>
                   <Button 
@@ -1968,7 +2012,7 @@ function AdminBarcodeScannerModal({
     }
 
     setScannedId(barcode);
-    setFormData({ name: '', category: '', systemColor: '' });
+    setFormData({ name: '', category: '', systemColor: '', location: formData.location || 'Shop' });
     setStep('details');
   };
 

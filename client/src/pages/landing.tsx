@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
-import { mergeBranding } from "@/lib/branding";
+import { mergeBranding, type BrandingState } from "@/lib/branding";
 import { api } from "@/lib/api";
 
 function AdminAccessModal({
@@ -106,7 +106,7 @@ function AdminAccessModal({
 export default function Landing() {
   const [, setLocation] = useLocation();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [brandingState, setBrandingState] = useState(branding);
+  const [brandingState, setBrandingState] = useState<BrandingState>(branding);
 
   useEffect(() => {
     let active = true;

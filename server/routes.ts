@@ -102,8 +102,9 @@ export async function registerRoutes(
   app.post("/api/equipment", async (req, res) => {
     try {
       const payload = { ...req.body } as Partial<InsertEquipment>;
-      if (typeof payload.dueDate === "string") {
-        const trimmed = payload.dueDate.trim();
+      const dueDateInput: unknown = req.body?.dueDate;
+      if (typeof dueDateInput === "string") {
+        const trimmed = dueDateInput.trim();
         if (!trimmed) {
           delete payload.dueDate;
         } else {
@@ -131,8 +132,9 @@ export async function registerRoutes(
     try {
       const currentId = req.params.id;
       const updatePayload = { ...req.body } as Partial<InsertEquipment>;
-      if (typeof updatePayload.dueDate === "string") {
-        const trimmed = updatePayload.dueDate.trim();
+      const dueDateInput: unknown = req.body?.dueDate;
+      if (typeof dueDateInput === "string") {
+        const trimmed = dueDateInput.trim();
         if (!trimmed) {
           updatePayload.dueDate = null;
         } else {
@@ -209,14 +211,17 @@ export async function registerRoutes(
   // System checkout
   app.post("/api/equipment/checkout/system", async (req, res) => {
     try {
-      const { systemColor, equipmentIds, workOrder, techName } = req.body;
+      const { systemColor, equipmentIds, workOrder, techName, valveNumber } = req.body;
       
       if (!systemColor || !equipmentIds || !workOrder || !techName) {
         return res.status(400).json({ error: "Missing required fields" });
       }
 
       const checkedOutAt = new Date();
-      const systemNotes = `Checked out under WO ${workOrder} as part of ${systemColor} System by ${techName}`;
+      const normalizedValveNumber =
+        typeof valveNumber === "string" && valveNumber.trim() ? valveNumber.trim() : null;
+      const valveSuffix = normalizedValveNumber ? `, Valve # ${normalizedValveNumber}` : "";
+      const systemNotes = `Checked out under WO ${workOrder}${valveSuffix} as part of ${systemColor} System by ${techName}`;
       
       const bagColors = new Set<string>();
       let computerId: string | null = null;
@@ -258,7 +263,7 @@ export async function registerRoutes(
           await storage.addEquipmentHistory({
             equipmentId: id,
             action: 'check_out',
-            details: `Checked out as part of ${systemColor} System by ${techName}`,
+            details: `Checked out as part of ${systemColor} System${valveSuffix} by ${techName}`,
             workOrder,
           });
           
@@ -269,7 +274,7 @@ export async function registerRoutes(
       if (computerId) {
         const bagLabel =
           bagColors.size > 0 ? `${Array.from(bagColors).join(", ")} bag` : "bag";
-        const details = `${techName} checked out ${systemColor} system, ${bagLabel}, from ${computerLocation}.`;
+        const details = `${techName} checked out ${systemColor} system, ${bagLabel}, from ${computerLocation}${normalizedValveNumber ? ` (Valve # ${normalizedValveNumber})` : ""}.`;
         await storage.addEquipmentHistory({
           equipmentId: computerId,
           action: 'system_check_out',
@@ -392,18 +397,21 @@ export async function registerRoutes(
   // Single item checkout
   app.post("/api/equipment/:id/checkout", async (req, res) => {
     try {
-      const { workOrder, techName } = req.body;
+      const { workOrder, techName, valveNumber } = req.body;
       
       if (!workOrder || !techName) {
         return res.status(400).json({ error: "Missing required fields" });
       }
+      const normalizedValveNumber =
+        typeof valveNumber === "string" && valveNumber.trim() ? valveNumber.trim() : null;
+      const valveSuffix = normalizedValveNumber ? `, Valve # ${normalizedValveNumber}` : "";
 
       const equipment = await storage.updateEquipment(req.params.id, {
         status: 'checked_out',
         workOrder,
         checkedOutBy: techName,
         checkedOutAt: new Date(),
-        notes: `Checked out under WO ${workOrder} by ${techName}`,
+        notes: `Checked out under WO ${workOrder}${valveSuffix} by ${techName}`,
       });
 
       if (!equipment) {
@@ -414,7 +422,7 @@ export async function registerRoutes(
       await storage.addEquipmentHistory({
         equipmentId: req.params.id,
         action: 'check_out',
-        details: `Checked out by ${techName}`,
+        details: `Checked out${normalizedValveNumber ? ` for Valve # ${normalizedValveNumber}` : ""} by ${techName}`,
         workOrder,
       });
 
