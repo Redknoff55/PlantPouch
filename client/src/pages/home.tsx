@@ -126,6 +126,12 @@ const csvEscape = (value: string) => {
   return value;
 };
 
+const extractValveNumber = (notes?: string | null) => {
+  if (!notes) return null;
+  const match = notes.match(/Valve\s*#\s*(.+?)(?:\s+as part of|\s+by|,|\.|$)/i);
+  return match?.[1]?.trim() || null;
+};
+
 // --- Components ---
 
 function StatusBadge({ status }: { status: string }) {
@@ -3526,8 +3532,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         const tech = item.checkedOutBy || "Unknown tech";
         const workOrder = item.workOrder || "-";
         const effectiveColor = item.temporarySystemColor || item.systemColor;
+        const valveNumber = extractValveNumber(item.notes);
         const key = effectiveColor
-          ? `system:${effectiveColor}:${workOrder}:${tech}`
+          ? `system:${effectiveColor}:${workOrder}:${tech}:${valveNumber ?? "-"}`
           : `item:${item.id}`;
 
         if (!acc[key]) {
@@ -3536,12 +3543,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             systemColor: effectiveColor || null,
             tech,
             workOrder,
+            valveNumber,
             items: [],
           };
         }
+        if (!acc[key].valveNumber && valveNumber) {
+          acc[key].valveNumber = valveNumber;
+        }
         acc[key].items.push(item);
         return acc;
-      }, {} as Record<string, { key: string; systemColor: string | null; tech: string; workOrder: string; items: Equipment[] }>)
+      }, {} as Record<string, { key: string; systemColor: string | null; tech: string; workOrder: string; valveNumber: string | null; items: Equipment[] }>)
   ).sort((a, b) => {
     const aTime = a.items[0]?.checkedOutAt ? new Date(a.items[0].checkedOutAt).getTime() : 0;
     const bTime = b.items[0]?.checkedOutAt ? new Date(b.items[0].checkedOutAt).getTime() : 0;
@@ -4295,9 +4306,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <div className="space-y-2">
                 {checkedOutGroups.map((group) => {
                   const sample = group.items[0];
+                  const valveSuffix = group.valveNumber ? ` (Valve # ${group.valveNumber})` : "";
                   const label = group.systemColor
-                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}`
-                    : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}`;
+                    ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}${valveSuffix}`
+                    : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}${valveSuffix}`;
                   const time = sample?.checkedOutAt
                     ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
                     : "-";
