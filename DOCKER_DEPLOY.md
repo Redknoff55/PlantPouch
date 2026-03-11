@@ -6,13 +6,13 @@ This guide covers two deployment options: GitHub Container Registry (automatic) 
 
 ## Option 1: GitHub Container Registry (Automatic)
 
-The included GitHub Actions workflow automatically builds and pushes images when you push to `main` or create a release.
+The included GitHub Actions workflow automatically builds and pushes images when you push to `main`, push to `testing`, or create a release.
 
 ### Setup
 
 1. **Push this repo to GitHub**
 2. **Enable GitHub Packages** (usually enabled by default)
-3. **Push to main branch** - the image will build automatically
+3. **Push to `main` or `testing`** - the matching image tag will build automatically
 
 ### Deployment
 
@@ -124,6 +124,7 @@ docker compose -f docker-compose.deploy.yml up -d
 
 When using GitHub Actions, images are tagged automatically:
 - `latest` - always points to the latest `main` branch build
+- `testing` - points to the latest `testing` branch build
 - `v1.0.0` - when you create a release tag
 - `main` - branch name tag
 
@@ -131,3 +132,5 @@ To deploy a specific version:
 ```yaml
 image: ghcr.io/redknoff55/plantpouch:v1.0.0
 ```
+
+For a test stack that tracks the `testing` branch image, use [docker-compose.testing.yml](/home/rednoff55/code/PlantPouch/docker-compose.testing.yml).
