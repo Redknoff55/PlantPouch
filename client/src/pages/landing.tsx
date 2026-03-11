@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
-import { mergeBranding, type BrandingState } from "@/lib/branding";
+import { applyBrandingToDocument, mergeBranding, type BrandingState } from "@/lib/branding";
 import { api } from "@/lib/api";
 
 function AdminAccessModal({
@@ -123,6 +123,10 @@ export default function Landing() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    applyBrandingToDocument(brandingState);
+  }, [brandingState]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

@@ -17,9 +17,11 @@ The included GitHub Actions workflow automatically builds and pushes images when
 ### Deployment
 
 1. Copy `docker-compose.deploy.yml` to your server
-2. Create a `.env` file (see Environment Variables below)
+2. Create a `.env` file with `./script/init-env.sh`
 3. Run:
    ```bash
+   chmod +x script/init-env.sh script/reset-db-password.sh
+   ./script/init-env.sh
    docker compose -f docker-compose.deploy.yml up -d
    ```
 
@@ -50,13 +52,15 @@ docker push YOUR_DOCKERHUB_USERNAME/plantpouch:latest
 ### Deployment
 
 1. Copy `docker-compose.deploy.yml` to your server
-2. Create a `.env` file (see Environment Variables below)
+2. Create a `.env` file with `./script/init-env.sh`
 3. Update the image name:
    ```yaml
    image: YOUR_DOCKERHUB_USERNAME/plantpouch:latest
    ```
 4. Run:
    ```bash
+   chmod +x script/init-env.sh script/reset-db-password.sh
+   ./script/init-env.sh
    docker compose -f docker-compose.deploy.yml up -d
    ```
 
@@ -69,17 +73,25 @@ The database tables are created automatically when the container starts - no man
 Create a `.env` file next to your `docker-compose.deploy.yml`:
 
 ```env
-# Application
 APP_PORT=5000
-
-# Database credentials (change these in production!)
 POSTGRES_USER=plantpouch
-POSTGRES_PASSWORD=your_secure_password_here
+POSTGRES_PASSWORD=replace_me_with_a_long_random_password
 POSTGRES_DB=plantpouch
-
-# Optional: Expose database port (remove in production)
-# DB_PORT=5432
 ```
+
+The included helper creates this file for you:
+
+```bash
+./script/init-env.sh
+```
+
+To rotate the database password later without rebuilding the stack:
+
+```bash
+./script/reset-db-password.sh
+```
+
+That script updates Postgres, rewrites `.env`, and restarts the app with the new password.
 
 ---
 
@@ -100,10 +112,10 @@ docker compose -f docker-compose.deploy.yml pull
 docker compose -f docker-compose.deploy.yml up -d
 
 # Backup database
-docker compose -f docker-compose.deploy.yml exec db pg_dump -U plantpouch plantpouch > backup.sql
+/bin/sh -ac '. ./.env && docker compose --env-file .env -f docker-compose.deploy.yml exec db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > backup.sql
 
 # Restore database
-docker compose -f docker-compose.deploy.yml exec -T db psql -U plantpouch plantpouch < backup.sql
+/bin/sh -ac '. ./.env && docker compose --env-file .env -f docker-compose.deploy.yml exec -T db psql -U "$POSTGRES_USER" "$POSTGRES_DB"' < backup.sql
 ```
 
 ---

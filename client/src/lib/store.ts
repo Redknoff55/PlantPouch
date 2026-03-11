@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 export type EquipmentStatus = 'available' | 'checked_out' | 'broken';
 
 export interface Equipment {
-  id: string; // The "QR Code"
+  id: string;
   name: string;
   category: string;
   systemColor?: string;

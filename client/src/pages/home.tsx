@@ -19,7 +19,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { 
-  QrCode, 
   Search, 
   AlertTriangle, 
   Wrench, 
@@ -29,12 +28,9 @@ import {
   RefreshCw,
   Box,
   ClipboardCheck,
-  Download,
-  ScanBarcode,
   Settings,
   Image,
   Upload,
-  Check
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -45,8 +41,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
-import { mergeBranding, type BrandingState } from "@/lib/branding";
-import type { IScannerControls } from "@zxing/browser";
+import { applyBrandingToDocument, mergeBranding, type BrandingState } from "@/lib/branding";
+import { fontPresetOptions } from "@shared/branding";
 
 const normalizeLocation = (location?: string | null) => (location ?? "").trim().toLowerCase();
 
@@ -232,225 +228,6 @@ function EquipmentListItem({
 }
 
 // --- Main Pages/Views ---
-
-function ScannerView({ onScan, onClose }: { onScan: (id: string) => void; onClose: () => void }) {
-  const [manualId, setManualId] = useState("");
-  const { data: equipment = [] } = useEquipment();
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const zxingControlsRef = useRef<IScannerControls | null>(null);
-  const barcodeDetectorCtor = (window as Window & {
-    BarcodeDetector?: new (options: { formats: string[] }) => {
-      detect: (video: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>>;
-    };
-  }).BarcodeDetector;
-
-  const stopScanner = () => {
-    zxingControlsRef.current?.stop();
-    zxingControlsRef.current = null;
-    if (animationFrameRef.current !== null) {
-      cancelAnimationFrame(animationFrameRef.current);
-    }
-    animationFrameRef.current = null;
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setIsScanning(false);
-  };
-
-  const handleSimulatedScan = () => {
-    // Pick a random equipment ID for demo purposes if empty, or try to match input
-    const targetId = manualId || (equipment.length > 0 ? equipment[Math.floor(Math.random() * equipment.length)].id : "");
-    if (targetId) onScan(targetId);
-  };
-
-  useEffect(() => {
-    return () => stopScanner();
-  }, []);
-
-  const parseScanValue = (value: string) => {
-    try {
-      const parsed = JSON.parse(value) as { id?: string };
-      if (parsed?.id) {
-        return parsed.id;
-      }
-    } catch {
-      // Not JSON, fall back to raw string
-    }
-    return value;
-  };
-
-  const startScanner = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setScanError("Camera access isn't available in this browser. Use manual entry below.");
-      return;
-    }
-    if (!window.isSecureContext) {
-      setScanError("Camera access requires HTTPS or localhost. Use a secure URL or manual entry.");
-      return;
-    }
-    if (!videoRef.current) {
-      setScanError("Camera preview isn't ready. Please try again.");
-      return;
-    }
-
-    stopScanner();
-    setIsStarting(true);
-    setScanError(null);
-
-    try {
-      try {
-        const { BrowserMultiFormatReader } = await import("@zxing/browser");
-        const codeReader = new BrowserMultiFormatReader();
-        const controls = await codeReader.decodeFromVideoDevice(
-          undefined,
-          videoRef.current,
-          (result: { getText: () => string } | undefined, error: unknown) => {
-            if (result) {
-              stopScanner();
-              onScan(parseScanValue(result.getText()));
-              return;
-            }
-            if (error instanceof Error && error.name !== "NotFoundException") {
-              setScanError("Unable to read a QR code. Try better lighting or manual entry.");
-            }
-          },
-        );
-        zxingControlsRef.current = controls;
-        setIsScanning(true);
-        return;
-      } catch {
-        // Fall back to BarcodeDetector if ZXing isn't available.
-      }
-
-      if (!barcodeDetectorCtor) {
-        setScanError("QR scanning isn't supported in this browser. Use manual entry below.");
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      const detector = new barcodeDetectorCtor({ formats: ["qr_code"] });
-      setIsScanning(true);
-
-      const scanFrame = async () => {
-        if (!videoRef.current) return;
-
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          const result = barcodes[0]?.rawValue?.trim();
-          if (result) {
-            stopScanner();
-            onScan(parseScanValue(result));
-            return;
-          }
-        } catch {
-          setScanError("Unable to read a QR code. Try better lighting or manual entry.");
-        }
-
-        animationFrameRef.current = requestAnimationFrame(scanFrame);
-      };
-
-      animationFrameRef.current = requestAnimationFrame(scanFrame);
-    } catch {
-      setScanError("Camera access was blocked. Enable permissions or use manual entry.");
-      stopScanner();
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const handleManualScan = () => {
-    const targetId = manualId.trim();
-    if (!targetId) {
-      setScanError("Enter an equipment ID before identifying.");
-      return;
-    }
-    onScan(targetId);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-primary/20 shadow-2xl">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-            <QrCode className="w-6 h-6 text-primary" />
-          </div>
-          <CardTitle>Scan Equipment QR</CardTitle>
-          <CardDescription>Align the QR code within the frame</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div
-            className="relative aspect-square bg-black rounded-lg overflow-hidden border-2 border-primary/30 flex items-center justify-center"
-            onClick={handleSimulatedScan}
-          >
-            <video
-              ref={videoRef}
-              className="absolute inset-0 h-full w-full object-cover"
-              muted
-              playsInline
-            />
-            <div className="absolute inset-0 border-[40px] border-black/50 z-10 pointer-events-none"></div>
-            <div className="w-64 h-64 border-2 border-primary animate-pulse z-20 relative pointer-events-none">
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-primary -mt-1 -ml-1"></div>
-              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-primary -mt-1 -mr-1"></div>
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-primary -mb-1 -ml-1"></div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-primary -mb-1 -mr-1"></div>
-            </div>
-            <div className="absolute inset-0 flex items-center justify-center opacity-80 pointer-events-none">
-              <span className="text-muted-foreground text-xs text-center px-4">
-                {scanError ? scanError : (isScanning ? "Point the camera at a QR code to scan." : "Camera is off. Tap start below.")}
-              </span>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="flex justify-center">
-              <Button onClick={startScanner} disabled={isStarting || isScanning}>
-                {isStarting ? "Starting camera..." : (isScanning ? "Camera active" : "Start camera")}
-              </Button>
-            </div>
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Or enter manually</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Input
-                placeholder="Enter Equipment ID (e.g. EQ-001)"
-                value={manualId}
-                onChange={(e) => setManualId(e.target.value)}
-                className="font-mono uppercase"
-              />
-              <Button onClick={handleManualScan}>
-                Identify
-              </Button>
-            </div>
-            <Button variant="ghost" className="w-full" onClick={onClose}>
-              Cancel
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
 function EditEquipmentModal({
   equipment,
@@ -730,13 +507,6 @@ function ActionModal({
 
   if (!isOpen || !equipment) return null;
 
-  const qrPayload = JSON.stringify({
-    id: equipment.id,
-    name: equipment.name,
-    category: equipment.category,
-    systemColor: equipment.systemColor,
-  });
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrPayload)}`;
   const isCheckingOut = equipment.status === 'available';
   const isBrokenState = equipment.status === 'broken';
   const isRepairItem = isRepairLocation(equipment.location);
@@ -806,15 +576,6 @@ function ActionModal({
     if (typeof window === "undefined") return;
     localStorage.setItem("plantpouch-tech-name", techName);
   }, [techName]);
-
-  const handleCopyQr = async () => {
-    try {
-      await navigator.clipboard.writeText(qrPayload);
-      toast.success("QR payload copied to clipboard.");
-    } catch {
-      toast.error("Failed to copy QR payload.");
-    }
-  };
 
   const handleDelete = () => {
     const confirmed = window.confirm(`Delete ${equipment.id}? This cannot be undone.`);
@@ -903,21 +664,6 @@ function ActionModal({
                     </Button>
                   </div>
                 )}
-
-                <div className="grid gap-2 sm:grid-cols-2">
-                    <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => window.open(qrUrl, "_blank", "noopener,noreferrer")}
-                    >
-                        <QrCode className="w-4 h-4 mr-2" />
-                        Open QR Code
-                    </Button>
-                    <Button variant="outline" className="w-full" onClick={handleCopyQr}>
-                        <Download className="w-4 h-4 mr-2" />
-                        Copy QR Data
-                    </Button>
-                </div>
 
                 {canManageEquipment && (
                   <div className="grid gap-2 sm:grid-cols-2">
@@ -1823,7 +1569,7 @@ function AddEquipmentModal({
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Equipment ID (QR Code) <span className="text-destructive">*</span></Label>
+              <Label>Equipment ID <span className="text-destructive">*</span></Label>
               <Input 
                 placeholder="e.g. EQ-006" 
                 className="font-mono uppercase"
@@ -1936,326 +1682,6 @@ function AddEquipmentModal({
   );
 }
 
-function AdminBarcodeScannerModal({ 
-  isOpen, 
-  onClose,
-  locationOptions,
-  systemColorOptions,
-  onAddLocation,
-}: { 
-  isOpen: boolean; 
-  onClose: () => void;
-  locationOptions: string[];
-  systemColorOptions: string[];
-  onAddLocation: (value: string) => void;
-}) {
-  const createEquipment = useCreateEquipment();
-  const [scannedId, setScannedId] = useState("");
-  const [manualBarcode, setManualBarcode] = useState("");
-  const [formData, setFormData] = useState({
-    name: '',
-    category: '',
-    systemColor: '',
-    location: 'Shop',
-  });
-  const [addedItems, setAddedItems] = useState<string[]>([]);
-  const [step, setStep] = useState<'scan' | 'details'>('scan');
-  const [newLocation, setNewLocation] = useState("");
-
-  if (!isOpen) return null;
-
-  const tryParseQrPayload = (payload: string) => {
-    try {
-      return JSON.parse(payload) as {
-        id?: string;
-        name?: string;
-        category?: string;
-        systemColor?: string;
-      };
-    } catch {
-      return null;
-    }
-  };
-
-  const handleScan = (barcode: string) => {
-    const parsed = tryParseQrPayload(barcode);
-    if (parsed?.id && parsed?.name && parsed?.category) {
-      const parsedId = parsed.id;
-      createEquipment.mutate({
-        id: parsedId,
-        name: parsed.name,
-        category: parsed.category,
-        systemColor: parsed.systemColor || undefined,
-        originalSystemColor: parsed.systemColor || undefined,
-        location: formData.location || "Shop",
-        status: 'available'
-      }, {
-        onSuccess: () => {
-          toast.success(`Equipment ${parsedId} added successfully`);
-          setAddedItems(prev => [...prev, parsedId]);
-          setScannedId("");
-          setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
-          setManualBarcode("");
-          setStep('scan');
-        },
-        onError: (error) => {
-          toast.error(`Failed to add equipment: ${error.message}`);
-        }
-      });
-      return;
-    }
-
-    if (parsed?.id) {
-      setScannedId(parsed.id);
-      setFormData({
-        name: parsed.name || '',
-        category: parsed.category || '',
-        systemColor: parsed.systemColor || '',
-        location: formData.location || 'Shop'
-      });
-      setStep('details');
-      return;
-    }
-
-    setScannedId(barcode);
-    setFormData({ name: '', category: '', systemColor: '', location: formData.location || 'Shop' });
-    setStep('details');
-  };
-
-  const handleSimulatedScan = () => {
-    const barcode = manualBarcode || `EQ-${String(Math.floor(Math.random() * 9000) + 1000)}`;
-    handleScan(barcode);
-  };
-
-  const handleAddEquipment = () => {
-    if (!scannedId || !formData.name || !formData.category) return;
-    
-    createEquipment.mutate({
-      id: scannedId,
-      name: formData.name,
-      category: formData.category,
-      systemColor: formData.systemColor || undefined,
-      originalSystemColor: formData.systemColor || undefined,
-      location: formData.location || "Shop",
-      status: 'available'
-    });
-    
-    setAddedItems(prev => [...prev, scannedId]);
-    setScannedId("");
-    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
-    setManualBarcode("");
-    setStep('scan');
-  };
-
-  const handleClose = () => {
-    setScannedId("");
-    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
-    setManualBarcode("");
-    setAddedItems([]);
-    setStep('scan');
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
-      >
-        <div className="p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center">
-                <ScanBarcode className="w-5 h-5 text-amber-500" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">Barcode Import</h2>
-                <p className="text-xs text-muted-foreground">Admin - Quick Equipment Add</p>
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" onClick={handleClose} data-testid="button-close-barcode">
-              <X className="w-5 h-5" />
-            </Button>
-          </div>
-
-          {addedItems.length > 0 && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">
-              <div className="flex items-center gap-2 text-emerald-500 text-sm font-medium mb-2">
-                <Check className="w-4 h-4" />
-                Added {addedItems.length} item(s)
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {addedItems.map(id => (
-                  <Badge key={id} variant="outline" className="text-xs font-mono">
-                    {id}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {step === 'scan' && (
-            <div className="space-y-4">
-              <div className="relative aspect-video bg-black rounded-lg overflow-hidden border-2 border-amber-500/30 flex items-center justify-center cursor-pointer" onClick={handleSimulatedScan}>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full h-1 bg-amber-500/50 animate-pulse" />
-                </div>
-                <div className="absolute inset-x-8 top-8 bottom-8 border-2 border-dashed border-amber-500/40 rounded flex items-center justify-center">
-                  <ScanBarcode className="w-16 h-16 text-amber-500/30" />
-                </div>
-                <div className="absolute bottom-4 text-center">
-                  <span className="text-amber-500/70 text-xs animate-pulse">Tap to simulate barcode scan</span>
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-border" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">Or enter barcode manually</span>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2">
-                  <Input 
-                    placeholder="Enter barcode value..." 
-                    value={manualBarcode}
-                    onChange={(e) => setManualBarcode(e.target.value)}
-                    className="font-mono uppercase"
-                    data-testid="input-manual-barcode"
-                  />
-                  <Button onClick={handleSimulatedScan} data-testid="button-scan-barcode">
-                    Scan
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {step === 'details' && (
-            <div className="space-y-4">
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 text-center">
-                <span className="text-xs text-muted-foreground uppercase tracking-wider">Scanned Barcode</span>
-                <div className="text-2xl font-mono font-bold text-amber-500 mt-1">{scannedId}</div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="space-y-2">
-                  <Label>Equipment Name *</Label>
-                  <Input 
-                    placeholder="e.g. Fluke 87V Multimeter" 
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    data-testid="input-equipment-name"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>Category *</Label>
-                  <Input 
-                    placeholder="e.g. Measurement, Analysis, Pressure" 
-                    value={formData.category}
-                    onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                    data-testid="input-equipment-category"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>System Color (Optional)</Label>
-                  <Select 
-                    value={formData.systemColor} 
-                    onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
-                  >
-                    <SelectTrigger data-testid="select-system-color">
-                      <SelectValue placeholder="Select a system color..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {systemColorOptions.map((color) => (
-                        <SelectItem key={color} value={color}>
-                          {color} System
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Location</Label>
-                  <Select
-                    value={formData.location}
-                    onValueChange={(val) => setFormData(prev => ({ ...prev, location: val }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a location..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {locationOptions.map((location) => (
-                        <SelectItem key={location} value={location}>
-                          {location}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Add Location</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      value={newLocation}
-                      onChange={(e) => setNewLocation(e.target.value)}
-                      placeholder="e.g. Calibration"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        if (!newLocation.trim()) return;
-                        onAddLocation(newLocation);
-                        setFormData(prev => ({ ...prev, location: newLocation.trim() }));
-                        setNewLocation("");
-                      }}
-                    >
-                      Add
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <Button 
-                  variant="outline" 
-                  className="flex-1"
-                  onClick={() => {
-                    setStep('scan');
-                    setScannedId("");
-                    setFormData({ name: '', category: '', systemColor: '', location: 'Shop' });
-                  }}
-                  data-testid="button-cancel-add"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  className="flex-[2] h-12 text-lg font-semibold"
-                  onClick={handleAddEquipment}
-                  disabled={!formData.name || !formData.category}
-                  data-testid="button-add-and-next"
-                >
-                  Add & Scan Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
 function BrandingModal({
   isOpen,
   onClose,
@@ -2274,6 +1700,10 @@ function BrandingModal({
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.size > 256 * 1024) {
+      toast.error("Logo images must be 256 KB or smaller.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
@@ -2327,6 +1757,27 @@ function BrandingModal({
             </div>
 
             <div className="space-y-2">
+              <Label>Font Preset</Label>
+              <Select
+                value={value.fontPreset}
+                onValueChange={(fontPreset) =>
+                  onChange({ ...value, fontPreset: fontPreset as BrandingState["fontPreset"] })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a font pairing" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fontPresetOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label>Logo Text (fallback)</Label>
               <Input
                 value={value.logo.text ?? ""}
@@ -2340,17 +1791,10 @@ function BrandingModal({
             </div>
 
             <div className="space-y-2">
-              <Label>Logo Image URL</Label>
-              <Input
-                value={value.logo.imageSrc ?? ""}
-                onChange={(e) =>
-                  onChange({
-                    ...value,
-                    logo: { ...value.logo, imageSrc: e.target.value },
-                  })
-                }
-                placeholder="/logo.png or https://..."
-              />
+              <Label>Logo Image</Label>
+              <p className="text-xs text-muted-foreground">
+                Upload a local image only. Remote image URLs are disabled.
+              </p>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2">
@@ -3423,11 +2867,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const adminEnabled = mode === "admin";
   const updateEquipment = useUpdateEquipment();
   const queryClient = useQueryClient();
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
-  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(adminEnabled);
@@ -3706,6 +3148,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }, 400);
     return () => clearTimeout(timeout);
   }, [brandingLoaded, brandingState]);
+
+  useEffect(() => {
+    applyBrandingToDocument(brandingState);
+  }, [brandingState]);
 
   useEffect(() => {
     try {
@@ -4107,17 +3553,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 >
                   <History className="w-5 h-5" />
                 </Button>
-                {canManageEquipment && (
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    className="shrink-0 border-amber-500/30 text-amber-500 hover:bg-amber-500/10" 
-                    onClick={() => setIsBarcodeScannerOpen(true)}
-                    data-testid="button-barcode-scanner"
-                  >
-                    <ScanBarcode className="w-5 h-5" />
-                  </Button>
-                )}
                 {canManageEquipment && (
                   <Button
                     variant="outline"
@@ -4548,15 +3983,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               SYSTEM CHECK IN
           </button>
         </div>
-        
-        <button 
-            onClick={() => setIsScannerOpen(true)}
-            className="w-full py-4 rounded-xl bg-card border border-primary/20 text-foreground font-bold text-base shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
-        >
-            <QrCode className="w-5 h-5 text-primary" />
-            SINGLE QR SCAN
-        </button>
-
         {/* Equipment List */}
         <div className="space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -4667,30 +4093,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       </main>
 
       {/* Modals */}
-      {isScannerOpen && (
-        <ScannerView 
-            onScan={(id) => {
-                setIsScannerOpen(false);
-                setSelectedEquipmentId(id);
-            }} 
-            onClose={() => setIsScannerOpen(false)} 
-        />
-      )}
-
       <AnimatePresence>
         {canManageEquipment && isAddModalOpen && (
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)}
-            locationOptions={locationOptions}
-            systemColorOptions={systemColorOptions}
-            onAddLocation={handleAddLocation}
-          />
-        )}
-        {canManageEquipment && isBarcodeScannerOpen && (
-          <AdminBarcodeScannerModal
-            isOpen={isBarcodeScannerOpen}
-            onClose={() => setIsBarcodeScannerOpen(false)}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}

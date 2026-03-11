@@ -1,9 +1,10 @@
 export const branding = {
   appName: "PlantPouch",
   version: "0.1.1",
+  fontPreset: "industrial",
   logo: {
     text: "PP",
-    imageSrc: "", // Set to '/logo.png' after adding client/public/logo.png
+    imageSrc: "",
     alt: "PlantPouch logo",
   },
 } as const;

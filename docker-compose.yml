@@ -4,10 +4,10 @@ services:
   app:
     build: .
     ports:
-      - "5000:5000"
+      - "${APP_PORT:-5000}:5000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://equipmanager:equipmanager@db:5432/equipmanager
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       db:
         condition: service_healthy
@@ -16,13 +16,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: equipmanager
-      POSTGRES_PASSWORD: equipmanager
-      POSTGRES_DB: equipmanager
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U equipmanager -d equipmanager"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5

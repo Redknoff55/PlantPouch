@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from "@shared/schema";
+import { brandingSchema } from "@shared/branding";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { readFile, writeFile } from "fs/promises";
@@ -37,14 +38,15 @@ const brandingPath = path.join(process.cwd(), "branding.json");
 const loadBrandingOverrides = async () => {
   try {
     const raw = await readFile(brandingPath, "utf-8");
-    return JSON.parse(raw) as Record<string, unknown>;
+    return brandingSchema.partial().parse(JSON.parse(raw));
   } catch {
     return {};
   }
 };
 
-const saveBrandingOverrides = async (overrides: Record<string, unknown>) => {
-  await writeFile(brandingPath, JSON.stringify(overrides, null, 2), "utf-8");
+const saveBrandingOverrides = async (overrides: unknown) => {
+  const validated = brandingSchema.parse(overrides);
+  await writeFile(brandingPath, JSON.stringify(validated, null, 2), "utf-8");
 };
 
 export async function registerRoutes(
@@ -68,6 +70,9 @@ export async function registerRoutes(
       await saveBrandingOverrides(overrides);
       res.json({ ok: true });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
       console.error("Error saving branding:", error);
       res.status(500).json({ error: "Failed to save branding" });
     }

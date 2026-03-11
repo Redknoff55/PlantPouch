@@ -1,23 +1,16 @@
 import type { Equipment, InsertEquipment, System, InsertSystem } from "@shared/schema";
+import type { BrandingConfig } from "@shared/branding";
 
 const API_BASE = "/api";
 
 export const api = {
   branding: {
-    get: async (): Promise<Partial<{
-      appName: string;
-      version: string;
-      logo: { text?: string; imageSrc?: string; alt?: string };
-    }>> => {
+    get: async (): Promise<Partial<BrandingConfig>> => {
       const res = await fetch(`${API_BASE}/branding`);
       if (!res.ok) throw new Error("Failed to fetch branding");
       return res.json();
     },
-    save: async (data: Partial<{
-      appName: string;
-      version: string;
-      logo: { text?: string; imageSrc?: string; alt?: string };
-    }>): Promise<void> => {
+    save: async (data: BrandingConfig): Promise<void> => {
       const res = await fetch(`${API_BASE}/branding`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
