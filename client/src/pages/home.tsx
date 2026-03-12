@@ -3781,20 +3781,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                             <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs">
                               <span className="font-mono">{item.id}</span>
                               <span className="flex-1 text-muted-foreground truncate">{item.name}</span>
-                              {canManageEquipment && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 px-2 text-[10px]"
-                                  onClick={() => {
-                                    setSwapTarget(item);
-                                    setSwapContext("checked_out");
-                                    setIsSwapOpen(true);
-                                  }}
-                                >
-                                  Swap
-                                </Button>
-                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[10px]"
+                                onClick={() => {
+                                  setSwapTarget(item);
+                                  setSwapContext("checked_out");
+                                  setIsSwapOpen(true);
+                                }}
+                              >
+                                Swap
+                              </Button>
                             </div>
                           ))}
                         </div>
