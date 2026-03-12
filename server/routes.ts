@@ -5,7 +5,7 @@ import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from 
 import { brandingSchema } from "@shared/branding";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
 const parseDueDateString = (value: string) => {
@@ -33,7 +33,7 @@ const parseDueDateString = (value: string) => {
   return date;
 };
 
-const brandingPath = path.join(process.cwd(), "branding.json");
+const brandingPath = process.env.BRANDING_PATH || path.join(process.cwd(), "data", "branding.json");
 
 const loadBrandingOverrides = async () => {
   try {
@@ -46,6 +46,7 @@ const loadBrandingOverrides = async () => {
 
 const saveBrandingOverrides = async (overrides: unknown) => {
   const validated = brandingSchema.parse(overrides);
+  await mkdir(path.dirname(brandingPath), { recursive: true });
   await writeFile(brandingPath, JSON.stringify(validated, null, 2), "utf-8");
 };
 

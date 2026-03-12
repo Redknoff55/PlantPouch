@@ -8,6 +8,9 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      BRANDING_PATH: /app/data/branding.json
+    volumes:
+      - branding_data:/app/data
     depends_on:
       db:
         condition: service_healthy
@@ -30,3 +33,4 @@ services:
 
 volumes:
   postgres_data:
+  branding_data:

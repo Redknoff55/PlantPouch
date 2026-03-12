@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import Home from "@/pages/home";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ export default function AdminPage() {
     return <Home mode="admin" />;
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     setError("");
     if (!storedPin) {
       if (!pin || pin.length < 4) {
@@ -59,7 +60,8 @@ export default function AdminPage() {
             {storedPin ? "Enter your admin PIN to continue." : "Create your admin PIN."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label>{storedPin ? "PIN" : "New PIN"}</Label>
             <Input
@@ -87,10 +89,11 @@ export default function AdminPage() {
             <Button variant="outline" className="flex-1" onClick={() => setLocation("/")}>
               Back
             </Button>
-            <Button className="flex-1" onClick={handleSubmit}>
+            <Button className="flex-1" type="submit">
               {storedPin ? "Unlock" : "Set PIN"}
             </Button>
           </div>
+          </form>
         </CardContent>
       </Card>
     </div>

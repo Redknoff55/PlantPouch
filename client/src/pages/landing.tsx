@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { branding } from "@/config/branding";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,8 @@ function AdminAccessModal({
 
   if (!isOpen) return null;
 
-  const handleSubmit = () => {
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
     setError("");
     if (!storedPin) {
       if (!pin || pin.length < 4) {
@@ -65,7 +66,8 @@ function AdminAccessModal({
             {storedPin ? "Enter your admin PIN." : "Create an admin PIN to secure admin features."}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <Label>{storedPin ? "PIN" : "New PIN"}</Label>
             <Input
@@ -90,13 +92,14 @@ function AdminAccessModal({
           )}
           {error && <div className="text-sm text-destructive">{error}</div>}
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>
+            <Button variant="outline" className="flex-1" type="button" onClick={onClose}>
               Cancel
             </Button>
-            <Button className="flex-1" onClick={handleSubmit}>
+            <Button className="flex-1" type="submit">
               {storedPin ? "Unlock" : "Set PIN"}
             </Button>
           </div>
+          </form>
         </CardContent>
       </Card>
     </div>
