@@ -42,7 +42,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/api";
 import { branding } from "@/config/branding";
-import { applyBrandingToDocument, mergeBranding, type BrandingState } from "@/lib/branding";
+import {
+  applyBrandingToDocument,
+  loadBrandingFromStorage,
+  mergeBranding,
+  saveBrandingToStorage,
+  type BrandingState,
+} from "@/lib/branding";
 import { fontPresetOptions } from "@shared/branding";
 
 const normalizeLocation = (location?: string | null) => (location ?? "").trim().toLowerCase();
@@ -2910,7 +2916,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(adminEnabled);
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null);
-  const [brandingState, setBrandingState] = useState<BrandingState>(branding);
+  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
   const [brandingLoaded, setBrandingLoaded] = useState(false);
   const brandingDirtyRef = useRef(false);
   const canManageEquipment = adminEnabled && isAdminMode;
@@ -3162,7 +3168,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       .then((overrides) => {
         if (!active) return;
         if (!brandingDirtyRef.current) {
-          setBrandingState(mergeBranding(overrides));
+          const nextBranding = mergeBranding(overrides);
+          setBrandingState(nextBranding);
+          saveBrandingToStorage(nextBranding);
         }
         setBrandingLoaded(true);
       })
@@ -3188,6 +3196,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   useEffect(() => {
     applyBrandingToDocument(brandingState);
+    saveBrandingToStorage(brandingState);
   }, [brandingState]);
 
   useEffect(() => {
@@ -3562,7 +3571,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         <div className="max-w-4xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
                 <div
-                  className="w-10 h-10 rounded flex items-center justify-center bg-primary text-primary-foreground text-xl shadow-lg shadow-primary/20 overflow-hidden"
+                  className={cn(
+                    "w-10 h-10 rounded flex items-center justify-center text-xl overflow-hidden",
+                    brandingState.logo.imageSrc
+                      ? "bg-transparent shadow-none"
+                      : "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                  )}
                   aria-label={`${brandingState.appName} logo`}
                 >
                   {brandingState.logo.imageSrc ? (

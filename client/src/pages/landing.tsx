@@ -7,7 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
-import { applyBrandingToDocument, mergeBranding, type BrandingState } from "@/lib/branding";
+import {
+  applyBrandingToDocument,
+  loadBrandingFromStorage,
+  mergeBranding,
+  saveBrandingToStorage,
+  type BrandingState,
+} from "@/lib/branding";
 import { api } from "@/lib/api";
 
 function AdminAccessModal({
@@ -109,7 +115,7 @@ function AdminAccessModal({
 export default function Landing() {
   const [, setLocation] = useLocation();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [brandingState, setBrandingState] = useState<BrandingState>(branding);
+  const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
 
   useEffect(() => {
     let active = true;
@@ -117,7 +123,9 @@ export default function Landing() {
       .get()
       .then((overrides) => {
         if (!active) return;
-        setBrandingState(mergeBranding(overrides));
+        const nextBranding = mergeBranding(overrides);
+        setBrandingState(nextBranding);
+        saveBrandingToStorage(nextBranding);
       })
       .catch(() => {
         // Ignore branding fetch errors on the landing page.
@@ -129,12 +137,19 @@ export default function Landing() {
 
   useEffect(() => {
     applyBrandingToDocument(brandingState);
+    saveBrandingToStorage(brandingState);
   }, [brandingState]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-primary text-primary-foreground text-2xl font-bold flex items-center justify-center shadow-lg shadow-primary/20 mb-6 overflow-hidden">
+        <div
+          className={`w-16 h-16 rounded-2xl text-2xl font-bold flex items-center justify-center mb-6 overflow-hidden ${
+            brandingState.logo.imageSrc
+              ? "bg-transparent shadow-none"
+              : "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+          }`}
+        >
           {brandingState.logo.imageSrc ? (
             <img
               src={brandingState.logo.imageSrc}

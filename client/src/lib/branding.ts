@@ -30,3 +30,12 @@ export const loadBrandingFromStorage = (): BrandingState => {
     return branding;
   }
 };
+
+export const saveBrandingToStorage = (state: Partial<BrandingState>) => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(brandingStorageKey, JSON.stringify(mergeBranding(state)));
+  } catch {
+    // Ignore localStorage write failures.
+  }
+};
