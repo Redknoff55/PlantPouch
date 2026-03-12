@@ -3142,8 +3142,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   useEffect(() => {
     if (!brandingLoaded) return;
     const timeout = setTimeout(() => {
-      api.branding.save(brandingState).catch(() => {
-        toast.error("Failed to save branding.");
+      api.branding.save(brandingState).catch((error) => {
+        const message = error instanceof Error ? error.message : "Failed to save branding.";
+        toast.error(message);
       });
     }, 400);
     return () => clearTimeout(timeout);

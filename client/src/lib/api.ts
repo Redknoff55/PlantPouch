@@ -16,7 +16,18 @@ export const api = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to save branding");
+      if (!res.ok) {
+        let message = "Failed to save branding";
+        try {
+          const body = await res.json();
+          if (body?.error) {
+            message = body.error;
+          }
+        } catch {
+          // Keep the default message when the response is not JSON.
+        }
+        throw new Error(message);
+      }
       await res.json();
     },
   },
