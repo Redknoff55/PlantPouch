@@ -1855,6 +1855,7 @@ function AdminImportModal({
   const [fileName, setFileName] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ completed: number; total: number } | null>(null);
 
   if (!isOpen) return null;
 
@@ -1863,33 +1864,57 @@ function AdminImportModal({
     setFileName("");
     setErrors([]);
     setIsImporting(false);
+    setImportProgress(null);
   };
 
-  const parseCsvRow = (row: string) => {
-    const values: string[] = [];
-    let current = "";
+  const parseCsvRows = (text: string) => {
+    const rows: string[][] = [];
+    let currentCell = "";
+    let currentRow: string[] = [];
     let inQuotes = false;
 
-    for (let i = 0; i < row.length; i += 1) {
-      const char = row[i];
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+      const next = text[i + 1];
+
       if (char === '"') {
-        if (inQuotes && row[i + 1] === '"') {
-          current += '"';
+        if (inQuotes && next === '"') {
+          currentCell += '"';
           i += 1;
         } else {
           inQuotes = !inQuotes;
         }
         continue;
       }
-      if (char === ',' && !inQuotes) {
-        values.push(current.trim());
-        current = "";
+
+      if (char === "," && !inQuotes) {
+        currentRow.push(currentCell.trim());
+        currentCell = "";
         continue;
       }
-      current += char;
+
+      if ((char === "\n" || char === "\r") && !inQuotes) {
+        if (char === "\r" && next === "\n") {
+          i += 1;
+        }
+        currentRow.push(currentCell.trim());
+        currentCell = "";
+        if (currentRow.some((value) => value.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        continue;
+      }
+
+      currentCell += char;
     }
-    values.push(current.trim());
-    return values.map((value) => value.replace(/^"|"$/g, ""));
+
+    currentRow.push(currentCell.trim());
+    if (currentRow.some((value) => value.length > 0)) {
+      rows.push(currentRow);
+    }
+
+    return rows;
   };
 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1898,15 +1923,15 @@ function AdminImportModal({
 
     setFileName(file.name);
     const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((line) => line.trim());
+    const parsedRows = parseCsvRows(text);
 
-    if (lines.length === 0) {
+    if (parsedRows.length === 0) {
       setErrors(["The file is empty."]);
       setRows([]);
       return;
     }
 
-    const headerValues = parseCsvRow(lines[0]).map((value) => value.toLowerCase());
+    const headerValues = parsedRows[0].map((value) => value.toLowerCase());
     const headerMap = headerValues.reduce<Record<string, number>>((acc, value, index) => {
       acc[value] = index;
       return acc;
@@ -1918,12 +1943,11 @@ function AdminImportModal({
     const locationIndex = headerMap.location ?? headerMap["location"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
-    const dataLines = hasHeader ? lines.slice(1) : lines;
+    const dataRows = hasHeader ? parsedRows.slice(1) : parsedRows;
     const nextErrors: string[] = [];
     const nextRows: InsertEquipment[] = [];
 
-    dataLines.forEach((line, index) => {
-      const values = parseCsvRow(line);
+    dataRows.forEach((values, index) => {
       const id = hasHeader ? values[headerMap.id] : values[0];
       const name = hasHeader ? values[headerMap.name] : values[1];
       const category = hasHeader ? values[headerMap.category] : values[2];
@@ -1970,16 +1994,19 @@ function AdminImportModal({
     }
 
     setIsImporting(true);
+    setImportProgress({ completed: 0, total: rows.length });
     const importErrors: string[] = [];
     let successCount = 0;
 
-    for (const row of rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
       try {
         await api.equipment.create(row);
         successCount += 1;
       } catch (error) {
         importErrors.push(`${row.id}: ${error instanceof Error ? error.message : "Failed to create"}`);
       }
+      setImportProgress({ completed: index + 1, total: rows.length });
     }
 
     if (successCount > 0) {
@@ -1992,6 +2019,9 @@ function AdminImportModal({
 
     setErrors(importErrors);
     setIsImporting(false);
+    if (importErrors.length === 0) {
+      setImportProgress(null);
+    }
   };
 
   const handleClose = () => {
@@ -2036,6 +2066,11 @@ function AdminImportModal({
             )}
             {rows.length > 0 && (
               <div className="text-sm text-foreground">Ready to import {rows.length} item(s).</div>
+            )}
+            {isImporting && importProgress && (
+              <div className="text-xs text-muted-foreground">
+                Importing {importProgress.completed} of {importProgress.total} item(s)...
+              </div>
             )}
             {errors.length > 0 && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
