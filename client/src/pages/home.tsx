@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Box,
   ClipboardCheck,
+  Download,
   Settings,
   Image,
   Upload,
@@ -3466,14 +3467,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     const nowLabel = format(new Date(), "yyyyMMdd-HHmm");
     const filename = `plantpouch-export-${nowLabel}.csv`;
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+  toast.success(`Exported ${equipment.length} item(s) to ${filename}.`);
+};
 
   const handleReturnBorrowed = async (borrowedItem: Equipment) => {
     const brokenItem = borrowedItem.swappedFromId
@@ -3563,6 +3565,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     data-testid="button-csv-import"
                   >
                     <Upload className="w-5 h-5" />
+                  </Button>
+                )}
+                {adminEnabled && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={handleExportCsv}
+                    data-testid="button-export-csv"
+                  >
+                    <Download className="w-5 h-5" />
                   </Button>
                 )}
                 {canManageEquipment && (
