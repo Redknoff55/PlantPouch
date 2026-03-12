@@ -3781,18 +3781,20 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                             <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-background px-2 py-1 text-xs">
                               <span className="font-mono">{item.id}</span>
                               <span className="flex-1 text-muted-foreground truncate">{item.name}</span>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-[10px]"
-                                onClick={() => {
-                                  setSwapTarget(item);
-                                  setSwapContext("checked_out");
-                                  setIsSwapOpen(true);
-                                }}
-                              >
-                                Swap
-                              </Button>
+                              {canManageEquipment && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={() => {
+                                    setSwapTarget(item);
+                                    setSwapContext("checked_out");
+                                    setIsSwapOpen(true);
+                                  }}
+                                >
+                                  Swap
+                                </Button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -3804,66 +3806,66 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             )}
           </div>
 
-        {canManageEquipment && (
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <Tabs defaultValue="good">
-              <TabsList className="flex w-full flex-nowrap gap-2 overflow-x-auto py-1">
-                <TabsTrigger value="good">Good ({systemStatuses.length})</TabsTrigger>
-                <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
-                <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
-                <TabsTrigger value="borrowed">
-                  Borrowed ({equipment.filter((item) => item.swappedFromId).length})
-                </TabsTrigger>
-              </TabsList>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <Tabs defaultValue="good">
+            <TabsList className="flex w-full flex-nowrap gap-2 overflow-x-auto py-1">
+              <TabsTrigger value="good">Good ({systemStatuses.length})</TabsTrigger>
+              <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
+              <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
+              <TabsTrigger value="borrowed">
+                Borrowed ({equipment.filter((item) => item.swappedFromId).length})
+              </TabsTrigger>
+            </TabsList>
 
-              <TabsContent value="good" className="mt-4 space-y-3">
-                <div className="text-sm font-semibold">Good Systems (Shop)</div>
-                {systemStatuses.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">No systems in shop.</div>
-                ) : (
-                  <div className="space-y-1">
-                    {systemStatuses.map((system) => {
-                      const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
-                      return (
-                        <div key={system.color} className="text-xs font-medium">
-                          {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
-                          {missingCount > 0 ? ` - missing ${missingCount}` : ""}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <div className="mt-3 space-y-2">
-                  {goodSystemItems.map((group) => (
-                    <div key={group.color} className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedEquipmentId(item.id)}
-                          className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
-                        >
-                          <span className="font-mono">{item.id}</span>
-                          <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
-                          <span className="text-muted-foreground">
-                            {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "-"}
-                          </span>
-                        </button>
-                      ))}
-                      {group.missingItems.length > 0 && (
-                        <div className="text-[10px] text-muted-foreground">
-                          Missing: {group.missingItems.map((item) => item.id).join(", ")}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+            <TabsContent value="good" className="mt-4 space-y-3">
+              <div className="text-sm font-semibold">Good Systems (Shop)</div>
+              {systemStatuses.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No systems in shop.</div>
+              ) : (
+                <div className="space-y-1">
+                  {systemStatuses.map((system) => {
+                    const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
+                    return (
+                      <div key={system.color} className="text-xs font-medium">
+                        {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
+                        {missingCount > 0 ? ` - missing ${missingCount}` : ""}
+                      </div>
+                    );
+                  })}
                 </div>
-              </TabsContent>
+              )}
+              <div className="mt-3 space-y-2">
+                {goodSystemItems.map((group) => (
+                  <div key={group.color} className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedEquipmentId(item.id)}
+                        className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
+                      >
+                        <span className="font-mono">{item.id}</span>
+                        <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
+                        <span className="text-muted-foreground">
+                          {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "-"}
+                        </span>
+                      </button>
+                    ))}
+                    {group.missingItems.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        Missing: {group.missingItems.map((item) => item.id).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
 
-              <TabsContent value="sent" className="mt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold">Sent for Repairs</div>
+            <TabsContent value="sent" className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Sent for Repairs</div>
+                {canManageEquipment && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -3872,84 +3874,86 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   >
                     Returns
                   </Button>
-                </div>
-                {repairSystems.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">Nothing sent for repairs.</div>
-                ) : (
-                  <div className="space-y-1">
-                    {repairSystems.map((system) => (
-                      <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.items.length})
-                      </div>
-                    ))}
-                  </div>
                 )}
-                <div className="mt-3 space-y-2">
-                  {repairItems.map((group) => (
-                    <div key={group.color} className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedEquipmentId(item.id)}
-                          className="flex w-full items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
-                        >
-                          <span className="font-mono">{item.id}</span>
-                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                        </button>
-                      ))}
+              </div>
+              {repairSystems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">Nothing sent for repairs.</div>
+              ) : (
+                <div className="space-y-1">
+                  {repairSystems.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
                     </div>
                   ))}
                 </div>
-              </TabsContent>
-
-              <TabsContent value="waiting" className="mt-4 space-y-3">
-                <div className="text-sm font-semibold">Waiting on Repairs</div>
-                {waitingSystems.length === 0 ? (
-                  <div className="text-xs text-muted-foreground">Nothing waiting on repairs.</div>
-                ) : (
-                  <div className="space-y-1">
-                    {waitingSystems.map((system) => (
-                      <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.items.length})
-                      </div>
+              )}
+              <div className="mt-3 space-y-2">
+                {repairItems.map((group) => (
+                  <div key={group.color} className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedEquipmentId(item.id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
+                      >
+                        <span className="font-mono">{item.id}</span>
+                        <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
+                      </button>
                     ))}
                   </div>
-                )}
-                <div className="mt-3 space-y-2">
-                  {waitingItems.map((group) => (
-                    <div key={group.color} className="space-y-1">
-                      <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
-                      {group.items.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedEquipmentId(item.id)}
-                          className="flex w-full items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
-                        >
-                          <span className="font-mono">{item.id}</span>
-                          <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
-                        </button>
-                      ))}
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="waiting" className="mt-4 space-y-3">
+              <div className="text-sm font-semibold">Waiting on Repairs</div>
+              {waitingSystems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">Nothing waiting on repairs.</div>
+              ) : (
+                <div className="space-y-1">
+                  {waitingSystems.map((system) => (
+                    <div key={system.color} className="text-xs font-medium">
+                      {system.color} System ({system.items.length})
                     </div>
                   ))}
                 </div>
-              </TabsContent>
+              )}
+              <div className="mt-3 space-y-2">
+                {waitingItems.map((group) => (
+                  <div key={group.color} className="space-y-1">
+                    <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
+                    {group.items.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedEquipmentId(item.id)}
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
+                      >
+                        <span className="font-mono">{item.id}</span>
+                        <span className="flex-1 text-xs text-muted-foreground truncate">{item.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </TabsContent>
 
-              <TabsContent value="borrowed" className="mt-4 space-y-2">
-                <div className="text-sm font-semibold">Borrowed components</div>
-                {equipment.filter((item) => item.swappedFromId).length === 0 ? (
-                  <div className="text-xs text-muted-foreground">No borrowed components.</div>
-                ) : (
-                  <div className="space-y-1">
-                    {equipment
-                      .filter((item) => item.swappedFromId)
-                      .map((item) => (
-                        <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
-                          <span>
-                            {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
-                          </span>
+            <TabsContent value="borrowed" className="mt-4 space-y-2">
+              <div className="text-sm font-semibold">Borrowed components</div>
+              {equipment.filter((item) => item.swappedFromId).length === 0 ? (
+                <div className="text-xs text-muted-foreground">No borrowed components.</div>
+              ) : (
+                <div className="space-y-1">
+                  {equipment
+                    .filter((item) => item.swappedFromId)
+                    .map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
+                        <span>
+                          {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                        </span>
+                        {canManageEquipment && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -3958,14 +3962,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           >
                             Return
                           </Button>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
 
         {/* Action Button */}
         <div className="grid grid-cols-2 gap-4">
