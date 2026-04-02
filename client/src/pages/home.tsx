@@ -942,10 +942,14 @@ function ActionModal({
 
 function SystemCheckoutModal({ 
   isOpen, 
-  onClose 
+  onClose,
+  initialSystemColor,
+  initialValveNumber,
 }: { 
   isOpen: boolean; 
-  onClose: () => void 
+  onClose: () => void;
+  initialSystemColor?: string | null;
+  initialValveNumber?: string | null;
 }) {
   const { data: equipment = [] } = useEquipment();
   const checkoutSystem = useCheckoutSystem();
@@ -1018,6 +1022,45 @@ function SystemCheckoutModal({
     ...(selectedComputer ? [selectedComputer] : []),
     ...bagItems,
   ];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!initialSystemColor) return;
+
+    const computerCandidates = equipment.filter(
+      (item) =>
+        item.category === "Computer" &&
+        item.systemColor === initialSystemColor &&
+        isItemAvailable(item)
+    );
+    const selected = computerCandidates[0];
+    if (!selected) return;
+
+    const initialVerified: Record<string, string> = {
+      [selected.id]: selected.id,
+    };
+    const items = equipment.filter(
+      (item) =>
+        item.category !== "Computer" &&
+        (item.temporarySystemColor || item.systemColor) === initialSystemColor
+    );
+    const checkoutLocationForPreset = selected.location || "Shop";
+    items.forEach((item) => {
+      const available =
+        item.status === "available" &&
+        !item.temporarySystemColor &&
+        (item.location || "Shop") === checkoutLocationForPreset &&
+        !isRepairLocation(item.location);
+      initialVerified[item.id] = available ? item.id : "";
+    });
+
+    setSelectedComputerColor(initialSystemColor);
+    setSelectedBagColor(initialSystemColor);
+    setSelectedComputerId(selected.id);
+    setVerifiedItems(initialVerified);
+    setValveNumber(initialValveNumber ?? "");
+    setStep(3);
+  }, [equipment, initialSystemColor, initialValveNumber, isOpen]);
 
   const handleComputerSelect = (color: string) => {
     const candidates = equipment.filter(
@@ -2943,6 +2986,116 @@ function SystemConfigModal({
   );
 }
 
+function ResolveBorrowedModal({
+  isOpen,
+  onClose,
+  borrowedItem,
+  onResolve,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  borrowedItem: Equipment | null;
+  onResolve: (params: {
+    borrowedId: string;
+    action: "return_home" | "assign_permanent" | "move_to_spares" | "set_custom_location";
+    destinationLocation?: string;
+  }) => Promise<void>;
+}) {
+  const [action, setAction] = useState<"return_home" | "assign_permanent" | "move_to_spares" | "set_custom_location">("return_home");
+  const [destinationLocation, setDestinationLocation] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setAction("return_home");
+    setDestinationLocation("");
+    setIsSubmitting(false);
+  }, [isOpen, borrowedItem?.id]);
+
+  if (!isOpen || !borrowedItem) return null;
+
+  const needsLocation = action === "set_custom_location";
+
+  const handleSubmit = async () => {
+    if (needsLocation && !destinationLocation.trim()) {
+      toast.error("Enter a destination location.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onResolve({
+        borrowedId: borrowedItem.id,
+        action,
+        destinationLocation: destinationLocation.trim() || undefined,
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.98, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.98, opacity: 0 }}
+        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Resolve Borrowed Part</h2>
+              <p className="text-xs text-muted-foreground">
+                {borrowedItem.id} in {borrowedItem.temporarySystemColor ?? borrowedItem.systemColor ?? "system"}
+              </p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Action</Label>
+            <Select value={action} onValueChange={(value) => setAction(value as typeof action)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="return_home">Return to original system</SelectItem>
+                <SelectItem value="assign_permanent">Assign permanently to current system</SelectItem>
+                <SelectItem value="move_to_spares">Move to spares</SelectItem>
+                <SelectItem value="set_custom_location">Set custom location</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {needsLocation && (
+            <div className="space-y-2">
+              <Label>Destination Location</Label>
+              <Input
+                value={destinationLocation}
+                onChange={(event) => setDestinationLocation(event.target.value)}
+                placeholder="e.g. Bench 2"
+              />
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Saving..." : "Apply"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ReturnsModal({
   isOpen,
   onClose,
@@ -3295,6 +3448,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const queryClient = useQueryClient();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
+  const [checkoutPreset, setCheckoutPreset] = useState<{ systemColor: string; valveNumber?: string | null } | null>(null);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
@@ -3313,6 +3467,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [swapTarget, setSwapTarget] = useState<Equipment | null>(null);
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
+  const [borrowedToResolve, setBorrowedToResolve] = useState<Equipment | null>(null);
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const [isStageOpen, setIsStageOpen] = useState(false);
   const [stageInitialColor, setStageInitialColor] = useState<string | null>(null);
@@ -4000,29 +4155,32 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 };
 
   const handleReturnBorrowed = async (borrowedItem: Equipment) => {
-    const brokenItem = borrowedItem.swappedFromId
-      ? equipment.find((entry) => entry.id === borrowedItem.swappedFromId)
-      : undefined;
     try {
-      await api.equipment.update(borrowedItem.id, {
-        temporarySystemColor: null,
-        swappedFromId: null,
-        status: "available",
-        workOrder: null,
-        checkedOutBy: null,
-        checkedOutAt: null,
+      await api.equipment.resolveSwap({
+        borrowedId: borrowedItem.id,
+        action: "return_home",
       });
-      if (brokenItem) {
-        await api.equipment.update(brokenItem.id, {
-          replacementId: null,
-          status: "available",
-          location: "Shop",
-        });
-      }
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
       toast.success(`${borrowedItem.id} returned to original system.`);
     } catch {
       toast.error("Failed to return borrowed component.");
+    }
+  };
+
+  const handleResolveBorrowed = async (params: {
+    borrowedId: string;
+    action: "return_home" | "assign_permanent" | "move_to_spares" | "set_custom_location";
+    destinationLocation?: string;
+  }) => {
+    try {
+      await api.equipment.resolveSwap(params);
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
+      setBorrowedToResolve(null);
+      toast.success("Borrowed component updated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to resolve borrowed component.");
     }
   };
 
@@ -4499,7 +4657,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                             ))}
                           </div>
                           <div className="flex gap-2">
-                            <Button variant="outline" size="sm" className="flex-1" onClick={() => setIsSystemCheckoutOpen(true)}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => {
+                                setCheckoutPreset({
+                                  systemColor: group.color,
+                                  valveNumber: staged.valveNumber ?? undefined,
+                                });
+                                setIsSystemCheckoutOpen(true);
+                              }}
+                            >
                               <PackageCheck className="mr-2 h-4 w-4" />
                               Check Out
                             </Button>
@@ -4611,9 +4780,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                             variant="outline"
                             size="sm"
                             className="h-7 px-2 text-[10px]"
-                            onClick={() => handleReturnBorrowed(item)}
+                            onClick={() => setBorrowedToResolve(item)}
                           >
-                            Return
+                            Resolve
                           </Button>
                         )}
                       </div>
@@ -4627,7 +4796,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         {/* Action Button */}
         <div className="grid grid-cols-2 gap-4">
           <button 
-              onClick={() => setIsSystemCheckoutOpen(true)}
+              onClick={() => {
+                setCheckoutPreset(null);
+                setIsSystemCheckoutOpen(true);
+              }}
               className="py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
           >
               <Box className="w-8 h-8" />
@@ -4782,7 +4954,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         {isSystemCheckoutOpen && (
           <SystemCheckoutModal
             isOpen={isSystemCheckoutOpen}
-            onClose={() => setIsSystemCheckoutOpen(false)}
+            onClose={() => {
+              setIsSystemCheckoutOpen(false);
+              setCheckoutPreset(null);
+            }}
+            initialSystemColor={checkoutPreset?.systemColor}
+            initialValveNumber={checkoutPreset?.valveNumber}
           />
         )}
         {isSystemCheckInOpen && (
@@ -4876,6 +5053,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               handleAssignReplacement(swapTarget, replacement, swapContext, reason);
               setIsSwapOpen(false);
             }}
+          />
+        )}
+        {borrowedToResolve && (
+          <ResolveBorrowedModal
+            isOpen={!!borrowedToResolve}
+            onClose={() => setBorrowedToResolve(null)}
+            borrowedItem={borrowedToResolve}
+            onResolve={handleResolveBorrowed}
           />
         )}
         {selectedEquipmentId && (
