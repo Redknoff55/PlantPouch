@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import type { InsertEquipment, InsertSystem } from "@shared/schema";
+import type {
+  InsertEquipment,
+  InsertSystem,
+  InsertSystemConfig,
+  InsertStagedSystem,
+} from "@shared/schema";
 
 export function useEquipment() {
   return useQuery({
@@ -52,6 +57,7 @@ export function useCheckoutSystem() {
     }) => api.equipment.checkoutSystem(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
     },
   });
 }
@@ -65,6 +71,7 @@ export function useCheckinByWorkOrder() {
     }) => api.equipment.checkinByWorkOrder(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
     },
   });
 }
@@ -84,6 +91,7 @@ export function useCheckout() {
       api.equipment.checkout(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
     },
   });
 }
@@ -95,6 +103,7 @@ export function useCheckin() {
       api.equipment.checkin(id, params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
     },
   });
 }
@@ -134,6 +143,54 @@ export function useDeleteSystem() {
     mutationFn: (id: string) => api.systems.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['systems'] });
+    },
+  });
+}
+
+export function useSystemConfigs() {
+  return useQuery({
+    queryKey: ['system-configs'],
+    queryFn: api.systemConfigs.getAll,
+  });
+}
+
+export function useSaveSystemConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ systemColor, data }: { systemColor: string; data: InsertSystemConfig }) =>
+      api.systemConfigs.save(systemColor, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-configs'] });
+    },
+  });
+}
+
+export function useStagedSystems() {
+  return useQuery({
+    queryKey: ['staged-systems'],
+    queryFn: api.stagedSystems.getAll,
+  });
+}
+
+export function useSaveStagedSystem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ systemColor, data }: { systemColor: string; data: InsertStagedSystem }) =>
+      api.stagedSystems.save(systemColor, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+export function useClearStagedSystem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (systemColor: string) => api.stagedSystems.clear(systemColor),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
     },
   });
 }

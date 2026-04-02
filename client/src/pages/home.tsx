@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import type { Equipment, InsertEquipment } from "@shared/schema";
+import type {
+  Equipment,
+  InsertEquipment,
+  SystemRequirement,
+  StagedSystem,
+  StagedSystemMissingItem,
+} from "@shared/schema";
 import {
   useEquipment,
   useCreateEquipment,
@@ -9,6 +15,11 @@ import {
   useCheckin,
   useUpdateEquipment,
   useDeleteEquipment,
+  useSystemConfigs,
+  useSaveSystemConfig,
+  useStagedSystems,
+  useSaveStagedSystem,
+  useClearStagedSystem,
 } from "@/lib/hooks";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -32,6 +43,9 @@ import {
   Settings,
   Image,
   Upload,
+  MapPin,
+  PackageCheck,
+  ClipboardList,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -134,6 +148,31 @@ const extractValveNumber = (notes?: string | null) => {
   const match = notes.match(/Valve\s*#\s*(.+?)(?:\s+as part of|\s+by|,|\.|$)/i);
   return match?.[1]?.trim() || null;
 };
+
+const getVariantLabel = (value?: string | null) => {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : "Standard";
+};
+
+const getRequirementKey = (category: string, variant?: string | null) =>
+  `${category.trim()}::${getVariantLabel(variant)}`;
+
+const inferRequirementsFromItems = (items: Equipment[]): SystemRequirement[] =>
+  Object.values(
+    items.reduce((acc, item) => {
+      const key = getRequirementKey(item.category, item.variant);
+      if (!acc[key]) {
+        acc[key] = {
+          id: key,
+          category: item.category,
+          variant: getVariantLabel(item.variant),
+          quantity: 0,
+        };
+      }
+      acc[key].quantity += 1;
+      return acc;
+    }, {} as Record<string, SystemRequirement>)
+  ).sort((a, b) => a.category.localeCompare(b.category) || a.variant.localeCompare(b.variant));
 
 // --- Components ---
 
@@ -258,6 +297,7 @@ function EditEquipmentModal({
     id: equipment.id,
     name: equipment.name,
     category: equipment.category,
+    variant: equipment.variant ?? "",
     systemColor: equipment.systemColor ?? "",
     location: equipment.location ?? "Shop",
     dueDate: formatDueDateValue(equipment.dueDate),
@@ -270,6 +310,7 @@ function EditEquipmentModal({
       id: equipment.id,
       name: equipment.name,
       category: equipment.category,
+      variant: equipment.variant ?? "",
       systemColor: equipment.systemColor ?? "",
       location: equipment.location ?? "Shop",
       dueDate: formatDueDateValue(equipment.dueDate),
@@ -287,6 +328,7 @@ function EditEquipmentModal({
     const payload: Partial<InsertEquipment> = {
       name: formData.name,
       category: formData.category,
+      variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
     };
@@ -370,6 +412,15 @@ function EditEquipmentModal({
               <Input
                 value={formData.category}
                 onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Variant</Label>
+              <Input
+                value={formData.variant}
+                onChange={(e) => setFormData((prev) => ({ ...prev, variant: e.target.value }))}
+                placeholder="e.g. 0-100 PSI"
               />
             </div>
 
@@ -1510,6 +1561,7 @@ function AddEquipmentModal({
     id: '',
     name: '',
     category: '',
+    variant: '',
     systemColor: '',
     location: 'Shop',
     status: 'available',
@@ -1540,6 +1592,7 @@ function AddEquipmentModal({
       id: formData.id,
       name: formData.name,
       category: formData.category,
+      variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
       originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
@@ -1548,7 +1601,7 @@ function AddEquipmentModal({
     }, {
       onSuccess: () => {
         toast.success(`Equipment ${formData.id} added successfully`);
-        setFormData({ id: '', name: '', category: '', systemColor: '', location: 'Shop', status: 'available', dueDate: '' });
+        setFormData({ id: '', name: '', category: '', variant: '', systemColor: '', location: 'Shop', status: 'available', dueDate: '' });
         onClose();
       },
       onError: (error) => {
@@ -1603,6 +1656,15 @@ function AddEquipmentModal({
                 value={formData.category}
                 onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                 data-testid="input-add-equipment-category"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Variant</Label>
+              <Input
+                placeholder="e.g. 0-100 PSI"
+                value={formData.variant}
+                onChange={(e) => setFormData(prev => ({ ...prev, variant: e.target.value }))}
               />
             </div>
 
@@ -1944,6 +2006,7 @@ function AdminImportModal({
     }, {});
     const systemColorIndex =
       headerMap.systemcolor ?? headerMap["system_color"] ?? headerMap["system color"];
+    const variantIndex = headerMap.variant ?? headerMap.spec ?? headerMap.type;
     const dueDateIndex =
       headerMap["due date"] ?? headerMap["duedate"] ?? headerMap["due_date"];
     const locationIndex = headerMap.location ?? headerMap["location"];
@@ -1957,9 +2020,10 @@ function AdminImportModal({
       const id = hasHeader ? values[headerMap.id] : values[0];
       const name = hasHeader ? values[headerMap.name] : values[1];
       const category = hasHeader ? values[headerMap.category] : values[2];
-      const systemColor = hasHeader ? values[systemColorIndex ?? -1] : values[3];
-      const location = hasHeader ? values[locationIndex ?? -1] : values[4];
-      const dueDateRaw = hasHeader ? values[dueDateIndex ?? -1] : values[5];
+      const variant = hasHeader ? values[variantIndex ?? -1] : values[3];
+      const systemColor = hasHeader ? values[systemColorIndex ?? -1] : values[4];
+      const location = hasHeader ? values[locationIndex ?? -1] : values[5];
+      const dueDateRaw = hasHeader ? values[dueDateIndex ?? -1] : values[6];
       const dueDateTrimmed = dueDateRaw?.trim() ?? "";
 
       if (!id || !name || !category) {
@@ -1981,6 +2045,7 @@ function AdminImportModal({
         id: id.trim(),
         name: name.trim(),
         category: category.trim(),
+        variant: variant?.trim() || undefined,
         systemColor: systemColor?.trim() || undefined,
         originalSystemColor: systemColor?.trim() || undefined,
         location: location?.trim() || "Shop",
@@ -2061,8 +2126,8 @@ function AdminImportModal({
           </div>
 
           <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Upload a CSV file with columns: id, name, category, systemColor (optional), location (optional), Due Date (optional, MM/DD/YYYY).</p>
-            <p className="font-mono text-xs text-foreground/70">id,name,category,systemColor,location,Due Date</p>
+            <p>Upload a CSV file with columns: id, name, category, variant (optional), systemColor (optional), location (optional), Due Date (optional, MM/DD/YYYY).</p>
+            <p className="font-mono text-xs text-foreground/70">id,name,category,variant,systemColor,location,Due Date</p>
           </div>
 
           <div className="space-y-3">
@@ -2564,6 +2629,320 @@ function TransferSystemModal({
   );
 }
 
+function StageSystemModal({
+  isOpen,
+  onClose,
+  systems,
+  initialSystemColor,
+  onStage,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  systems: Array<{
+    color: string;
+    summary: string;
+    missingLabels: string[];
+  }>;
+  initialSystemColor?: string | null;
+  onStage: (params: {
+    systemColor: string;
+    stagingLocation: string;
+    stagedBy: string;
+    valveNumber?: string;
+    notes?: string;
+    missingItems: StagedSystemMissingItem[];
+    targetDate?: string;
+  }) => Promise<void>;
+}) {
+  const [systemColor, setSystemColor] = useState("");
+  const [stagingLocation, setStagingLocation] = useState("");
+  const [stagedBy, setStagedBy] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
+  );
+  const [valveNumber, setValveNumber] = useState("");
+  const [notes, setNotes] = useState("");
+  const [missingSummary, setMissingSummary] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSystemColor(initialSystemColor ?? "");
+    setStagingLocation("");
+    setValveNumber("");
+    setNotes("");
+    setMissingSummary("");
+    setTargetDate("");
+    setIsSubmitting(false);
+  }, [initialSystemColor, isOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("plantpouch-tech-name", stagedBy);
+  }, [stagedBy]);
+
+  if (!isOpen) return null;
+
+  const selectedSystem = systems.find((system) => system.color === systemColor);
+
+  const handleSubmit = async () => {
+    if (!systemColor || !stagingLocation.trim() || !stagedBy.trim()) {
+      toast.error("System, staging location, and tech name are required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const missingItems = missingSummary
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => ({ category: value, variant: null, notes: null }));
+
+      await onStage({
+        systemColor,
+        stagingLocation: stagingLocation.trim(),
+        stagedBy: stagedBy.trim(),
+        valveNumber: valveNumber.trim() || undefined,
+        notes: notes.trim() || undefined,
+        missingItems,
+        targetDate: targetDate.trim() || undefined,
+      });
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Stage System</h2>
+              <p className="text-xs text-muted-foreground">Mark a system ready for upcoming work</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <Label>Select System</Label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {systems.map((system) => (
+                <button
+                  key={system.color}
+                  type="button"
+                  className={cn(
+                    "rounded-lg border px-4 py-3 text-left transition-colors",
+                    systemColor === system.color
+                      ? "border-primary bg-primary/5"
+                      : "border-border/60 bg-muted/20 hover:border-primary/40"
+                  )}
+                  onClick={() => setSystemColor(system.color)}
+                >
+                  <div className="font-semibold">{system.color} System</div>
+                  <div className="text-xs text-muted-foreground">{system.summary}</div>
+                </button>
+              ))}
+            </div>
+            {selectedSystem && selectedSystem.missingLabels.length > 0 && (
+              <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                Current gaps: {selectedSystem.missingLabels.join(", ")}
+              </div>
+            )}
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Staged At *</Label>
+              <Input value={stagingLocation} onChange={(event) => setStagingLocation(event.target.value)} placeholder="e.g. Scaffold at ED804" />
+            </div>
+            <div className="space-y-2">
+              <Label>Staged By *</Label>
+              <Input value={stagedBy} onChange={(event) => setStagedBy(event.target.value)} placeholder="Tech name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Valve / Site</Label>
+              <Input value={valveNumber} onChange={(event) => setValveNumber(event.target.value)} placeholder="e.g. ED804" />
+            </div>
+            <div className="space-y-2">
+              <Label>Target Date</Label>
+              <Input value={targetDate} onChange={(event) => setTargetDate(event.target.value)} placeholder="YYYY-MM-DD" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Missing / Needed Items</Label>
+            <Input
+              value={missingSummary}
+              onChange={(event) => setMissingSummary(event.target.value)}
+              placeholder="Comma separated, e.g. Encoder, 0-100 PSI transducer"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Notes</Label>
+            <Textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="e.g. Needs batteries before morning shift."
+            />
+          </div>
+
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button className="flex-1" onClick={handleSubmit} disabled={isSubmitting}>
+              {isSubmitting ? "Staging..." : "Stage System"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function SystemConfigModal({
+  isOpen,
+  onClose,
+  systemColor,
+  initialRequirements,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  systemColor: string;
+  initialRequirements: SystemRequirement[];
+  onSave: (requirements: SystemRequirement[]) => Promise<void>;
+}) {
+  const [requirements, setRequirements] = useState<SystemRequirement[]>(initialRequirements);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setRequirements(initialRequirements);
+    setIsSubmitting(false);
+  }, [initialRequirements, isOpen]);
+
+  if (!isOpen) return null;
+
+  const updateRequirement = (id: string, updates: Partial<SystemRequirement>) => {
+    setRequirements((prev) =>
+      prev.map((requirement) => (requirement.id === id ? { ...requirement, ...updates } : requirement))
+    );
+  };
+
+  const addRequirement = () => {
+    const id = `${Date.now()}`;
+    setRequirements((prev) => [
+      ...prev,
+      { id, category: "", variant: "Standard", quantity: 1 },
+    ]);
+  };
+
+  const handleSave = async () => {
+    const cleaned = requirements
+      .map((requirement) => ({
+        ...requirement,
+        category: requirement.category.trim(),
+        variant: getVariantLabel(requirement.variant),
+        quantity: Number(requirement.quantity) || 0,
+      }))
+      .filter((requirement) => requirement.category && requirement.quantity > 0);
+
+    if (!cleaned.length) {
+      toast.error("Add at least one required component.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await onSave(cleaned);
+      onClose();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative w-full max-w-3xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+      >
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">{systemColor} System Template</h2>
+              <p className="text-xs text-muted-foreground">Define the required parts for this kit</p>
+            </div>
+            <Button variant="ghost" size="icon" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {requirements.map((requirement) => (
+              <div key={requirement.id} className="grid gap-3 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-[1.4fr_1.4fr_120px_auto]">
+                <Input
+                  value={requirement.category}
+                  onChange={(event) => updateRequirement(requirement.id, { category: event.target.value })}
+                  placeholder="Category"
+                />
+                <Input
+                  value={requirement.variant}
+                  onChange={(event) => updateRequirement(requirement.id, { variant: event.target.value })}
+                  placeholder="Variant"
+                />
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(requirement.quantity)}
+                  onChange={(event) => updateRequirement(requirement.id, { quantity: Number(event.target.value) })}
+                  placeholder="Qty"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setRequirements((prev) => prev.filter((entry) => entry.id !== requirement.id))}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="outline" onClick={addRequirement}>
+              Add Requirement
+            </Button>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave} disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save Template"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function ReturnsModal({
   isOpen,
   onClose,
@@ -2906,8 +3285,13 @@ function ActivityLogModal({
 
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
+  const { data: systemConfigs = [] } = useSystemConfigs();
+  const { data: stagedSystems = [] } = useStagedSystems();
   const adminEnabled = mode === "admin";
   const updateEquipment = useUpdateEquipment();
+  const saveSystemConfig = useSaveSystemConfig();
+  const saveStagedSystem = useSaveStagedSystem();
+  const clearStagedSystem = useClearStagedSystem();
   const queryClient = useQueryClient();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -2930,6 +3314,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const [isSwapOpen, setIsSwapOpen] = useState(false);
   const [swapContext, setSwapContext] = useState<"broken" | "checked_out">("broken");
   const [isTransferOpen, setIsTransferOpen] = useState(false);
+  const [isStageOpen, setIsStageOpen] = useState(false);
+  const [stageInitialColor, setStageInitialColor] = useState<string | null>(null);
+  const [templateColor, setTemplateColor] = useState<string | null>(null);
   const [isReturnsOpen, setIsReturnsOpen] = useState(false);
   const [isDueDatesOpen, setIsDueDatesOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
@@ -3008,6 +3395,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       location: uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed",
     };
   });
+  const systemConfigMap = new Map(systemConfigs.map((config) => [config.systemColor, config]));
+  const stagedSystemMap = new Map(stagedSystems.map((staged) => [staged.systemColor, staged]));
 
   const checkedOutGroups = Object.values(
     equipment
@@ -3063,7 +3452,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       (item) =>
         (item.temporarySystemColor || item.systemColor) === color &&
         item.status === "available" &&
-        getLocation(item) === "Shop"
+        !isRepairLocation(item.location)
     );
 
 
@@ -3083,18 +3472,36 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   };
 
   const systemStatuses = systemsByColor.map((system) => {
+    const config = systemConfigMap.get(system.color);
+    const requirements =
+      config && config.requirements.length > 0
+        ? config.requirements
+        : inferRequirementsFromItems(system.items);
     const availableItems = activeComponentsForSystem(system.color);
-    const expectedCount = system.items.length;
-    const effectiveAvailableCount = Math.min(availableItems.length, expectedCount);
-    const missingItems = system.items.filter(
-      (item) => !availableItems.some((available) => available.id === item.id)
-    );
+    const availableByRequirement = availableItems.reduce((acc, item) => {
+      const key = getRequirementKey(item.category, item.variant);
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const missingRequirements = requirements
+      .map((requirement) => {
+        const present = availableByRequirement[getRequirementKey(requirement.category, requirement.variant)] ?? 0;
+        const missing = Math.max(requirement.quantity - present, 0);
+        return missing > 0 ? { ...requirement, missing } : null;
+      })
+      .filter((entry): entry is SystemRequirement & { missing: number } => !!entry);
+    const expectedCount = requirements.reduce((sum, requirement) => sum + requirement.quantity, 0);
+    const effectiveAvailableCount = expectedCount - missingRequirements.reduce((sum, req) => sum + req.missing, 0);
     return {
       color: system.color,
+      config,
+      requirements,
       expectedCount,
       availableItems,
       effectiveAvailableCount,
-      missingItems,
+      missingRequirements,
+      staged: stagedSystemMap.get(system.color) ?? null,
+      completeness: missingRequirements.length === 0 ? "Complete" : `Missing ${missingRequirements.reduce((sum, req) => sum + req.missing, 0)}`,
     };
   });
 
@@ -3113,10 +3520,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const goodSystemItems = systemStatuses.map((system) => ({
     color: system.color,
     items: system.availableItems,
-    missingItems: system.missingItems,
+    missingRequirements: system.missingRequirements,
     expectedCount: system.expectedCount,
     effectiveAvailableCount: system.effectiveAvailableCount,
+    requirements: system.requirements,
+    staged: system.staged,
+    completeness: system.completeness,
   }));
+  const availableSystemItems = goodSystemItems.filter((system) => !system.staged);
+  const stagedSystemItems = goodSystemItems.filter((system) => !!system.staged);
   const repairItems = groupItemsBySystem(
     equipment.filter((item) => getRepairLocationType(item.location) === "sent")
   );
@@ -3279,6 +3691,70 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       toast.error("Failed to transfer system.");
     }
   };
+
+  const handleStageSystem = async (params: {
+    systemColor: string;
+    stagingLocation: string;
+    stagedBy: string;
+    valveNumber?: string;
+    notes?: string;
+    missingItems: StagedSystemMissingItem[];
+    targetDate?: string;
+  }) => {
+    try {
+      await saveStagedSystem.mutateAsync({
+        systemColor: params.systemColor,
+        data: {
+          systemColor: params.systemColor,
+          stagingLocation: params.stagingLocation,
+          stagedBy: params.stagedBy,
+          valveNumber: params.valveNumber,
+          notes: params.notes,
+          missingItems: params.missingItems,
+          targetDate: params.targetDate ? new Date(params.targetDate) : undefined,
+          sourceWorkOrder: null,
+        },
+      });
+      toast.success(`${params.systemColor} system staged.`);
+      setIsStageOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to stage system.");
+    }
+  };
+
+  const handleClearStaging = async (systemColor: string) => {
+    try {
+      await clearStagedSystem.mutateAsync(systemColor);
+      toast.success(`${systemColor} staging cleared.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clear staging.");
+    }
+  };
+
+  const handleSaveSystemTemplate = async (systemColor: string, requirements: SystemRequirement[]) => {
+    try {
+      await saveSystemConfig.mutateAsync({
+        systemColor,
+        data: {
+          systemColor,
+          displayName: `${systemColor} System`,
+          requirements,
+        },
+      });
+      toast.success(`${systemColor} template saved.`);
+      setTemplateColor(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save system template.");
+    }
+  };
+
+  const stageableSystems = systemStatuses.map((system) => ({
+    color: system.color,
+    summary: system.completeness,
+    missingLabels: system.missingRequirements.map(
+      (requirement) => `${requirement.missing} x ${requirement.variant} ${requirement.category}`
+    ),
+  }));
 
   const systemsAtLocation = systemLocationSummary.filter(
     (system) => system.location === locationFilter
@@ -3481,6 +3957,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       "id",
       "name",
       "category",
+      "variant",
       "systemColor",
       "location",
       "Due Date",
@@ -3494,6 +3971,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       item.id,
       item.name,
       item.category,
+      item.variant ?? "",
       item.systemColor ?? "",
       item.location ?? "Shop",
       formatDueDateValue(item.dueDate),
@@ -3824,6 +4302,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                           </Badge>
                         )}
                         <span>{time}</span>
+                        {group.systemColor && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setStageInitialColor(group.systemColor);
+                              setIsStageOpen(true);
+                            }}
+                          >
+                            Stage
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -3869,7 +4359,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <Tabs defaultValue="good">
             <TabsList className="flex w-full flex-nowrap gap-2 overflow-x-auto py-1">
-              <TabsTrigger value="good">Good ({systemStatuses.length})</TabsTrigger>
+              <TabsTrigger value="good">Ready ({availableSystemItems.length})</TabsTrigger>
+              <TabsTrigger value="staged">Staged ({stagedSystemItems.length})</TabsTrigger>
               <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
               <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
               <TabsTrigger value="borrowed">
@@ -3878,48 +4369,150 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </TabsList>
 
             <TabsContent value="good" className="mt-4 space-y-3">
-              <div className="text-sm font-semibold">Good Systems (Shop)</div>
-              {systemStatuses.length === 0 ? (
-                <div className="text-xs text-muted-foreground">No systems in shop.</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Ready Systems</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStageInitialColor(null);
+                    setIsStageOpen(true);
+                  }}
+                >
+                  <MapPin className="mr-2 h-4 w-4" />
+                  Stage System
+                </Button>
+              </div>
+              {availableSystemItems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No systems ready right now.</div>
               ) : (
-                <div className="space-y-1">
-                  {systemStatuses.map((system) => {
-                    const missingCount = Math.max(system.expectedCount - system.effectiveAvailableCount, 0);
+                <div className="grid gap-3 md:grid-cols-2">
+                  {availableSystemItems.map((group) => (
+                    <Card key={group.color} className="border-border/60">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center justify-between text-base">
+                          <span>{group.color} System</span>
+                          <Badge variant={group.missingRequirements.length === 0 ? "default" : "secondary"}>
+                            {group.completeness}
+                          </Badge>
+                        </CardTitle>
+                        <CardDescription>
+                          {group.effectiveAvailableCount}/{group.expectedCount} required components available
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="space-y-1 text-xs">
+                          {group.requirements.map((requirement) => (
+                            <div key={requirement.id} className="flex items-center justify-between rounded-md border border-border/40 bg-muted/20 px-2 py-1">
+                              <span>{requirement.category} · {requirement.variant}</span>
+                              <span>x{requirement.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {group.missingRequirements.length > 0 && (
+                          <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
+                            Missing: {group.missingRequirements.map((requirement) => `${requirement.missing} x ${requirement.variant} ${requirement.category}`).join(", ")}
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          {group.items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => setSelectedEquipmentId(item.id)}
+                              className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40"
+                            >
+                              <span className="font-mono">{item.id}</span>
+                              <span className="flex-1 truncate px-3 text-muted-foreground">{item.name}</span>
+                              <span>{getVariantLabel(item.variant)}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {canManageEquipment && (
+                          <Button variant="outline" size="sm" onClick={() => setTemplateColor(group.color)}>
+                            Edit Template
+                          </Button>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="staged" className="mt-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Upcoming Work</div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setStageInitialColor(null);
+                    setIsStageOpen(true);
+                  }}
+                >
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  Stage System
+                </Button>
+              </div>
+              {stagedSystemItems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No staged systems.</div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {stagedSystemItems.map((group) => {
+                    const staged = group.staged as StagedSystem;
                     return (
-                      <div key={system.color} className="text-xs font-medium">
-                        {system.color} System ({system.effectiveAvailableCount}/{system.expectedCount})
-                        {missingCount > 0 ? ` - missing ${missingCount}` : ""}
-                      </div>
+                      <Card key={group.color} className="border-border/60">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="flex items-center justify-between text-base">
+                            <span>{group.color} System</span>
+                            <Badge variant="secondary">Staged</Badge>
+                          </CardTitle>
+                          <CardDescription>
+                            {staged.stagedBy} staged {group.color} at {staged.stagingLocation}
+                            {staged.valveNumber ? ` for ${staged.valveNumber}` : ""}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3 text-xs">
+                          {staged.notes && (
+                            <div className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+                              {staged.notes}
+                            </div>
+                          )}
+                          {staged.missingItems.length > 0 && (
+                            <div className="rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                              Needs: {staged.missingItems.map((item) => item.variant ? `${item.category} (${item.variant})` : item.category).join(", ")}
+                            </div>
+                          )}
+                          <div className="space-y-1">
+                            {group.items.map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setSelectedEquipmentId(item.id)}
+                                className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-left hover:border-primary/40"
+                              >
+                                <span className="font-mono">{item.id}</span>
+                                <span className="flex-1 truncate px-3 text-muted-foreground">{item.name}</span>
+                                <span>{getVariantLabel(item.variant)}</span>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button variant="outline" size="sm" className="flex-1" onClick={() => setIsSystemCheckoutOpen(true)}>
+                              <PackageCheck className="mr-2 h-4 w-4" />
+                              Check Out
+                            </Button>
+                            <Button variant="outline" size="sm" className="flex-1" onClick={() => handleClearStaging(group.color)}>
+                              Return to Pool
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
                     );
                   })}
                 </div>
               )}
-              <div className="mt-3 space-y-2">
-                {goodSystemItems.map((group) => (
-                  <div key={group.color} className="space-y-1">
-                    <div className="text-xs font-semibold text-muted-foreground">{group.color} System</div>
-                    {group.items.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedEquipmentId(item.id)}
-                        className="flex w-full items-center justify-between rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-xs text-left hover:border-primary/40 hover:bg-muted/30"
-                      >
-                        <span className="font-mono">{item.id}</span>
-                        <span className="flex-1 text-xs text-muted-foreground px-3 truncate">{item.name}</span>
-                        <span className="text-muted-foreground">
-                          {item.updatedAt ? format(new Date(item.updatedAt), "HH:mm dd/MM") : "-"}
-                        </span>
-                      </button>
-                    ))}
-                    {group.missingItems.length > 0 && (
-                      <div className="text-[10px] text-muted-foreground">
-                        Missing: {group.missingItems.map((item) => item.id).join(", ")}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
             </TabsContent>
 
             <TabsContent value="sent" className="mt-4 space-y-3">
@@ -4208,6 +4801,33 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             locationOptions={locationOptions}
             onAddLocation={handleAddLocation}
             onTransfer={handleTransferSystem}
+          />
+        )}
+        {isStageOpen && (
+          <StageSystemModal
+            isOpen={isStageOpen}
+            onClose={() => {
+              setIsStageOpen(false);
+              setStageInitialColor(null);
+            }}
+            systems={stageableSystems}
+            initialSystemColor={stageInitialColor}
+            onStage={handleStageSystem}
+          />
+        )}
+        {templateColor && (
+          <SystemConfigModal
+            isOpen={!!templateColor}
+            onClose={() => setTemplateColor(null)}
+            systemColor={templateColor}
+            initialRequirements={
+              systemConfigMap.get(templateColor)?.requirements.length
+                ? systemConfigMap.get(templateColor)!.requirements
+                : inferRequirementsFromItems(
+                    equipment.filter((item) => item.systemColor === templateColor)
+                  )
+            }
+            onSave={(requirements) => handleSaveSystemTemplate(templateColor, requirements)}
           />
         )}
         {isReturnsOpen && (

@@ -1,4 +1,13 @@
-import type { Equipment, InsertEquipment, System, InsertSystem } from "@shared/schema";
+import type {
+  Equipment,
+  InsertEquipment,
+  System,
+  InsertSystem,
+  SystemConfig,
+  InsertSystemConfig,
+  StagedSystem,
+  InsertStagedSystem,
+} from "@shared/schema";
 import type { BrandingConfig } from "@shared/branding";
 
 const API_BASE = "/api";
@@ -147,6 +156,19 @@ export const api = {
       if (!res.ok) throw new Error('Failed to swap equipment');
       await res.json();
     },
+    resolveSwap: async (params: {
+      borrowedId: string;
+      action: 'return_home' | 'assign_permanent' | 'move_to_spares' | 'set_custom_location';
+      destinationLocation?: string;
+    }): Promise<void> => {
+      const res = await fetch(`${API_BASE}/equipment/swap/resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      if (!res.ok) throw new Error('Failed to resolve swap');
+      await res.json();
+    },
   },
 
   systems: {
@@ -181,6 +203,53 @@ export const api = {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete system');
+    },
+  },
+
+  systemConfigs: {
+    getAll: async (): Promise<SystemConfig[]> => {
+      const res = await fetch(`${API_BASE}/system-configs`);
+      if (!res.ok) throw new Error('Failed to fetch system configs');
+      return res.json();
+    },
+    save: async (systemColor: string, data: InsertSystemConfig): Promise<SystemConfig> => {
+      const res = await fetch(`${API_BASE}/system-configs/${encodeURIComponent(systemColor)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to save system config');
+      return res.json();
+    },
+  },
+
+  stagedSystems: {
+    getAll: async (): Promise<StagedSystem[]> => {
+      const res = await fetch(`${API_BASE}/staged-systems`);
+      if (!res.ok) throw new Error('Failed to fetch staged systems');
+      return res.json();
+    },
+    save: async (systemColor: string, data: InsertStagedSystem): Promise<StagedSystem> => {
+      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to save staged system');
+      return res.json();
+    },
+    clear: async (systemColor: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to clear staged system');
+    },
+    checkout: async (systemColor: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}/checkout`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error('Failed to clear staged system for checkout');
+      await res.json();
     },
   },
 };

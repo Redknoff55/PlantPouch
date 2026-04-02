@@ -1,7 +1,13 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { insertEquipmentSchema, insertSystemSchema, type InsertEquipment } from "@shared/schema";
+import {
+  insertEquipmentSchema,
+  insertSystemSchema,
+  insertSystemConfigSchema,
+  insertStagedSystemSchema,
+  type InsertEquipment,
+} from "@shared/schema";
 import { brandingSchema } from "@shared/branding";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
@@ -278,6 +284,7 @@ export async function registerRoutes(
       );
 
       if (computerId) {
+        await storage.deleteStagedSystem(systemColor);
         const bagLabel =
           bagColors.size > 0 ? `${Array.from(bagColors).join(", ")} bag` : "bag";
         const details = `${techName} checked out ${systemColor} system, ${bagLabel}, from ${computerLocation}${normalizedValveNumber ? ` (Valve # ${normalizedValveNumber})` : ""}.`;
@@ -638,6 +645,205 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting system:", error);
       res.status(500).json({ error: "Failed to delete system" });
+    }
+  });
+
+  app.get("/api/system-configs", async (_req, res) => {
+    try {
+      const configs = await storage.getAllSystemConfigs();
+      res.json(configs);
+    } catch (error) {
+      console.error("Error fetching system configs:", error);
+      res.status(500).json({ error: "Failed to fetch system configs" });
+    }
+  });
+
+  app.get("/api/system-configs/:color", async (req, res) => {
+    try {
+      const config = await storage.getSystemConfig(req.params.color);
+      if (!config) {
+        return res.status(404).json({ error: "System config not found" });
+      }
+      res.json(config);
+    } catch (error) {
+      console.error("Error fetching system config:", error);
+      res.status(500).json({ error: "Failed to fetch system config" });
+    }
+  });
+
+  app.put("/api/system-configs/:color", async (req, res) => {
+    try {
+      const validated = insertSystemConfigSchema.parse({
+        ...req.body,
+        systemColor: req.params.color,
+      });
+      const config = await storage.upsertSystemConfig(validated);
+      res.json(config);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error saving system config:", error);
+      res.status(500).json({ error: "Failed to save system config" });
+    }
+  });
+
+  app.get("/api/staged-systems", async (_req, res) => {
+    try {
+      const stagedSystems = await storage.getAllStagedSystems();
+      res.json(stagedSystems);
+    } catch (error) {
+      console.error("Error fetching staged systems:", error);
+      res.status(500).json({ error: "Failed to fetch staged systems" });
+    }
+  });
+
+  app.put("/api/staged-systems/:color", async (req, res) => {
+    try {
+      const validated = insertStagedSystemSchema.parse({
+        ...req.body,
+        systemColor: req.params.color,
+        targetDate: req.body?.targetDate ? new Date(req.body.targetDate) : null,
+      });
+
+      const stagedSystem = await storage.upsertStagedSystem(validated);
+      const allEquipment = await storage.getAllEquipment();
+      const systemItems = allEquipment.filter(
+        (item) => (item.temporarySystemColor || item.systemColor) === req.params.color
+      );
+
+      await Promise.all(
+        systemItems.map((item) =>
+          storage.updateEquipment(item.id, {
+            status: "available",
+            workOrder: null,
+            checkedOutBy: null,
+            checkedOutAt: null,
+          })
+        )
+      );
+
+      await Promise.all(
+        systemItems.map((item) =>
+          storage.addEquipmentHistory({
+            equipmentId: item.id,
+            action: "stage",
+            details: `${validated.stagedBy} staged ${req.params.color} system at ${validated.stagingLocation}${validated.valveNumber ? ` for valve ${validated.valveNumber}` : ""}${validated.notes ? ` (${validated.notes})` : ""}`,
+            workOrder: item.workOrder || validated.sourceWorkOrder || undefined,
+          })
+        )
+      );
+
+      res.json(stagedSystem);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error saving staged system:", error);
+      res.status(500).json({ error: "Failed to save staged system" });
+    }
+  });
+
+  app.delete("/api/staged-systems/:color", async (req, res) => {
+    try {
+      const deleted = await storage.deleteStagedSystem(req.params.color);
+      if (!deleted) {
+        return res.status(404).json({ error: "Staged system not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting staged system:", error);
+      res.status(500).json({ error: "Failed to delete staged system" });
+    }
+  });
+
+  app.post("/api/staged-systems/:color/checkout", async (req, res) => {
+    try {
+      await storage.deleteStagedSystem(req.params.color);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Error clearing staged system on checkout:", error);
+      res.status(500).json({ error: "Failed to clear staged system" });
+    }
+  });
+
+  app.post("/api/equipment/swap/resolve", async (req, res) => {
+    try {
+      const payload = z.object({
+        borrowedId: z.string().min(1),
+        action: z.enum(["return_home", "assign_permanent", "move_to_spares", "set_custom_location"]),
+        destinationLocation: z.string().optional(),
+      }).parse(req.body);
+
+      const borrowedItem = await storage.getEquipment(payload.borrowedId);
+      if (!borrowedItem?.swappedFromId) {
+        return res.status(404).json({ error: "Borrowed item not found" });
+      }
+
+      const originalItem = await storage.getEquipment(borrowedItem.swappedFromId);
+      if (!originalItem) {
+        return res.status(404).json({ error: "Original item not found" });
+      }
+
+      const currentSystemColor = borrowedItem.temporarySystemColor || borrowedItem.systemColor || null;
+
+      if (payload.action === "return_home") {
+        await storage.updateEquipment(borrowedItem.id, {
+          temporarySystemColor: null,
+          swappedFromId: null,
+          status: "available",
+          workOrder: null,
+          checkedOutBy: null,
+          checkedOutAt: null,
+          location: payload.destinationLocation || borrowedItem.location || "Shop",
+        });
+      } else {
+        await storage.updateEquipment(borrowedItem.id, {
+          systemColor: currentSystemColor || borrowedItem.systemColor || undefined,
+          originalSystemColor: currentSystemColor || borrowedItem.originalSystemColor || undefined,
+          temporarySystemColor: null,
+          swappedFromId: null,
+          status: "available",
+          workOrder: null,
+          checkedOutBy: null,
+          checkedOutAt: null,
+          location:
+            payload.action === "move_to_spares"
+              ? "Shop"
+              : payload.action === "set_custom_location"
+                ? (payload.destinationLocation || borrowedItem.location || "Shop")
+                : (borrowedItem.location || "Shop"),
+        });
+
+        await storage.updateEquipment(originalItem.id, {
+          systemColor: null,
+          replacementId: null,
+          location:
+            payload.action === "move_to_spares"
+              ? "Shop"
+              : payload.action === "set_custom_location"
+                ? (payload.destinationLocation || originalItem.location || "Shop")
+                : (originalItem.location || "Waiting on Repairs"),
+        });
+      }
+
+      await storage.updateEquipment(originalItem.id, {
+        replacementId: null,
+      });
+
+      await storage.addEquipmentHistory({
+        equipmentId: borrowedItem.id,
+        action: "swap_resolved",
+        details: `Swap resolved with action ${payload.action}${payload.destinationLocation ? ` to ${payload.destinationLocation}` : ""}.`,
+      });
+
+      res.json({ ok: true });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error resolving swap:", error);
+      res.status(500).json({ error: "Failed to resolve swap" });
     }
   });
 
