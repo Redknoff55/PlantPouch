@@ -2758,15 +2758,15 @@ function StageSystemModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain p-4 sm:flex sm:items-center sm:justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="relative w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+        className="relative my-6 w-full max-w-2xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden sm:my-0"
       >
-        <div className="p-6 space-y-6">
+        <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto p-6 space-y-6 sm:max-h-[90vh]">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold">Stage System</h2>
@@ -2918,15 +2918,15 @@ function SystemConfigModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain p-4 sm:flex sm:items-center sm:justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="relative w-full max-w-3xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+        className="relative my-6 w-full max-w-3xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden sm:my-0"
       >
-        <div className="p-6 space-y-6">
+        <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto p-6 space-y-6 sm:max-h-[90vh]">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold">{systemColor} System Template</h2>
@@ -3035,15 +3035,15 @@ function ResolveBorrowedModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain p-4 sm:flex sm:items-center sm:justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <motion.div
         initial={{ scale: 0.98, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.98, opacity: 0 }}
-        className="relative w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+        className="relative my-6 w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden sm:my-0"
       >
-        <div className="p-6 space-y-6">
+        <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto p-6 space-y-6 sm:max-h-[90vh]">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold">Resolve Borrowed Part</h2>
