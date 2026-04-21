@@ -2902,22 +2902,28 @@ function SystemConfigModal({
   onClose,
   systemColor,
   initialRequirements,
+  equipment,
+  initialAssignedItemIds,
   onSave,
 }: {
   isOpen: boolean;
   onClose: () => void;
   systemColor: string;
   initialRequirements: SystemRequirement[];
-  onSave: (requirements: SystemRequirement[]) => Promise<void>;
+  equipment: Equipment[];
+  initialAssignedItemIds: string[];
+  onSave: (requirements: SystemRequirement[], assignedItemIds: string[]) => Promise<void>;
 }) {
   const [requirements, setRequirements] = useState<SystemRequirement[]>(initialRequirements);
+  const [assignedItemIds, setAssignedItemIds] = useState<string[]>(initialAssignedItemIds);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setRequirements(initialRequirements);
+    setAssignedItemIds(initialAssignedItemIds);
     setIsSubmitting(false);
-  }, [initialRequirements, isOpen]);
+  }, [initialAssignedItemIds, initialRequirements, isOpen]);
 
   if (!isOpen) return null;
 
@@ -2935,6 +2941,53 @@ function SystemConfigModal({
     ]);
   };
 
+  const toggleAssignedItem = (id: string) => {
+    setAssignedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((entry) => entry !== id) : [...prev, id]
+    );
+  };
+
+  const requirementKeys = new Set(
+    requirements
+      .map((requirement) =>
+        requirement.category.trim() ? getRequirementKey(requirement.category, requirement.variant) : ""
+      )
+      .filter(Boolean)
+  );
+
+  const assignedItems = assignedItemIds
+    .map((id) => equipment.find((item) => item.id === id))
+    .filter((item): item is Equipment => !!item);
+
+  const candidateItems = equipment
+    .filter((item) => {
+      const isAssigned = assignedItemIds.includes(item.id);
+      if (isAssigned) return true;
+      if (item.category === "Computer") return false;
+      if (item.status !== "available") return false;
+      if (item.temporarySystemColor) return false;
+      if (isRepairLocation(item.location)) return false;
+      if (requirementKeys.size === 0) return true;
+      return requirementKeys.has(getRequirementKey(item.category, item.variant));
+    })
+    .sort((a, b) => {
+      const aAssigned = assignedItemIds.includes(a.id) ? 1 : 0;
+      const bAssigned = assignedItemIds.includes(b.id) ? 1 : 0;
+      if (aAssigned !== bAssigned) return bAssigned - aAssigned;
+      const aMatches = requirementKeys.has(getRequirementKey(a.category, a.variant)) ? 1 : 0;
+      const bMatches = requirementKeys.has(getRequirementKey(b.category, b.variant)) ? 1 : 0;
+      if (aMatches !== bMatches) return bMatches - aMatches;
+      return a.category.localeCompare(b.category) || getVariantLabel(a.variant).localeCompare(getVariantLabel(b.variant)) || a.id.localeCompare(b.id);
+    });
+
+  const loadRequirementsFromAssigned = () => {
+    if (!assignedItems.length) {
+      toast.error("Select at least one initial component first.");
+      return;
+    }
+    setRequirements(inferRequirementsFromItems(assignedItems));
+  };
+
   const handleSave = async () => {
     const cleaned = requirements
       .map((requirement) => ({
@@ -2945,14 +2998,16 @@ function SystemConfigModal({
       }))
       .filter((requirement) => requirement.category && requirement.quantity > 0);
 
-    if (!cleaned.length) {
-      toast.error("Add at least one required component.");
+    const finalRequirements = cleaned.length > 0 ? cleaned : inferRequirementsFromItems(assignedItems);
+
+    if (!finalRequirements.length) {
+      toast.error("Add at least one requirement or select initial components.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await onSave(cleaned);
+      await onSave(finalRequirements, assignedItemIds);
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -2966,13 +3021,13 @@ function SystemConfigModal({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="relative my-6 w-full max-w-3xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden sm:my-0"
+        className="relative my-6 w-full max-w-4xl bg-card border border-border rounded-xl shadow-2xl overflow-hidden sm:my-0"
       >
         <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto p-6 space-y-6 sm:max-h-[90vh]">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold">{systemColor} System Template</h2>
-              <p className="text-xs text-muted-foreground">Define the required parts for this kit</p>
+              <p className="text-xs text-muted-foreground">Set the basic bag requirements, then choose the actual starting components for this bag.</p>
             </div>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="w-5 h-5" />
@@ -2980,6 +3035,15 @@ function SystemConfigModal({
           </div>
 
           <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Basic Requirements</div>
+                <div className="text-xs text-muted-foreground">These define what a complete bag should contain.</div>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadRequirementsFromAssigned}>
+                Use Selected Components
+              </Button>
+            </div>
             {requirements.map((requirement) => (
               <div key={requirement.id} className="grid gap-3 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-[1.4fr_1.4fr_120px_auto]">
                 <Input
@@ -3007,6 +3071,69 @@ function SystemConfigModal({
                 </Button>
               </div>
             ))}
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm font-semibold">Initial Bag Components</div>
+              <div className="text-xs text-muted-foreground">Pick the real parts that should belong to the {systemColor} bag by default.</div>
+            </div>
+            <div className="rounded-md border border-border/60 bg-muted/10 p-3">
+              {assignedItems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No initial components selected yet.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {assignedItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => toggleAssignedItem(item.id)}
+                      className="rounded-full border border-border/60 bg-background px-3 py-1 text-xs hover:border-primary/40"
+                    >
+                      {item.category} · {getVariantLabel(item.variant)} · {item.id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border border-border/60 bg-muted/10 p-3">
+              {candidateItems.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No available components match these requirements right now.</div>
+              ) : (
+                candidateItems.map((item) => {
+                  const isSelected = assignedItemIds.includes(item.id);
+                  const homeColor = item.systemColor || "Unassigned";
+                  const isDifferentHome = !!item.systemColor && item.systemColor !== systemColor;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => toggleAssignedItem(item.id)}
+                      className={cn(
+                        "flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left transition-colors",
+                        isSelected
+                          ? "border-primary bg-primary/5"
+                          : "border-border/60 bg-background hover:border-primary/40"
+                      )}
+                    >
+                      <Checkbox checked={isSelected} className="mt-0.5 pointer-events-none" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{item.category}</span>
+                          <span className="text-xs text-muted-foreground">{getVariantLabel(item.variant)}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{item.id}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span>Location: {item.location || "Shop"}</span>
+                          <span>Home bag: {homeColor}</span>
+                          {isDifferentHome && <Badge variant="secondary">Moves from {item.systemColor}</Badge>}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-3">
@@ -3928,7 +4055,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
-  const handleSaveSystemTemplate = async (systemColor: string, requirements: SystemRequirement[]) => {
+  const handleSaveSystemTemplate = async (
+    systemColor: string,
+    requirements: SystemRequirement[],
+    assignedItemIds: string[]
+  ) => {
     try {
       await saveSystemConfig.mutateAsync({
         systemColor,
@@ -3938,6 +4069,43 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           requirements,
         },
       });
+
+      const currentAssignedIds = equipment
+        .filter(
+          (item) =>
+            item.category !== "Computer" &&
+            item.systemColor === systemColor &&
+            item.status === "available" &&
+            !item.temporarySystemColor &&
+            !isRepairLocation(item.location)
+        )
+        .map((item) => item.id);
+
+      const nextAssignedSet = new Set(assignedItemIds);
+      const idsToRemove = currentAssignedIds.filter((id) => !nextAssignedSet.has(id));
+      const idsToAdd = assignedItemIds.filter((id) => !currentAssignedIds.includes(id));
+
+      await Promise.all([
+        ...idsToRemove.map((id) =>
+          updateEquipment.mutateAsync({
+            id,
+            data: {
+              systemColor: null,
+              originalSystemColor: null,
+            },
+          })
+        ),
+        ...idsToAdd.map((id) =>
+          updateEquipment.mutateAsync({
+            id,
+            data: {
+              systemColor,
+              originalSystemColor: systemColor,
+            },
+          })
+        ),
+      ]);
+
       toast.success(`${systemColor} template saved.`);
       setTemplateColor(null);
     } catch (error) {
@@ -5043,10 +5211,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               systemConfigMap.get(templateColor)?.requirements.length
                 ? systemConfigMap.get(templateColor)!.requirements
                 : inferRequirementsFromItems(
-                    equipment.filter((item) => item.systemColor === templateColor)
+                    equipment.filter(
+                      (item) => item.category !== "Computer" && item.systemColor === templateColor
+                    )
                   )
             }
-            onSave={(requirements) => handleSaveSystemTemplate(templateColor, requirements)}
+            equipment={equipment}
+            initialAssignedItemIds={
+              equipment
+                .filter(
+                  (item) =>
+                    item.category !== "Computer" &&
+                    item.systemColor === templateColor &&
+                    item.status === "available" &&
+                    !item.temporarySystemColor &&
+                    !isRepairLocation(item.location)
+                )
+                .map((item) => item.id)
+            }
+            onSave={(requirements, assignedItemIds) =>
+              handleSaveSystemTemplate(templateColor, requirements, assignedItemIds)
+            }
           />
         )}
         {isReturnsOpen && (
