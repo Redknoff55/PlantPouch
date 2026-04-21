@@ -990,9 +990,18 @@ function SystemCheckoutModal({
     )
   );
   const systemLocationSummary = systemColors.map((color) => {
-    const items = equipment.filter((item) => item.systemColor === color);
+    const items = equipment.filter((item) => {
+      if (item.category === "Computer") {
+        return item.systemColor === color;
+      }
+      return (item.temporarySystemColor || item.systemColor) === color;
+    });
+    const activeItems = items.filter(
+      (item) => item.status === "available" && !isRepairLocation(item.location)
+    );
+    const itemsForLocation = activeItems.length > 0 ? activeItems : items;
     const uniqueLocations = Array.from(
-      new Set(items.map((item) => item.location || "Shop"))
+      new Set(itemsForLocation.map((item) => item.location || "Shop"))
     );
     return {
       color,
@@ -1112,6 +1121,17 @@ function SystemCheckoutModal({
     }));
   };
 
+  const handleItemToggle = (item: Equipment, checked: boolean) => {
+    if (item.category === "Computer") return;
+    if (!checked) {
+      handleSwap(item.id, "");
+      return;
+    }
+
+    const fallbackSelection = isAvailableAtLocation(item) ? item.id : verifiedItems[item.id] || "";
+    handleSwap(item.id, fallbackSelection);
+  };
+
   const handleSubmit = () => {
     if (!workOrder || !techName.trim()) return;
     
@@ -1215,8 +1235,11 @@ function SystemCheckoutModal({
                         item.category !== "Computer" &&
                         (item.temporarySystemColor || item.systemColor) === color
                     );
+                    const locationItems = itemsForBag.filter(
+                      (item) => item.status === "available" && !isRepairLocation(item.location)
+                    );
                     const uniqueLocations = Array.from(
-                      new Set(itemsForBag.map((item) => item.location || "Shop"))
+                      new Set((locationItems.length > 0 ? locationItems : itemsForBag).map((item) => item.location || "Shop"))
                     );
                     const bagLocation =
                       uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed";
@@ -1275,28 +1298,41 @@ function SystemCheckoutModal({
                         const isAvailable = isAvailableAtLocation(item);
                         const isOriginal = currentSelectedId === item.id && isAvailable;
                         const selectedItem = equipment.find(e => e.id === currentSelectedId);
+                        const isChecked = Boolean(currentSelectedId);
+                        const selectedElsewhere = new Set(
+                            Object.entries(verifiedItems)
+                              .filter(([originalId, selectedId]) => originalId !== item.id && Boolean(selectedId))
+                              .map(([, selectedId]) => selectedId)
+                        );
                         
-                        // Find potential replacements (same category, available, not already borrowed)
+                        // Find potential replacements that can actually fill this slot at the current location.
                         const replacements = equipment.filter(e => 
                             e.category === item.category && 
+                            (e.variant || "") === (item.variant || "") &&
                             e.status === 'available' && 
                             e.id !== item.id &&
                             !e.temporarySystemColor &&
-                            (e.location || "Shop") === checkoutLocation
+                            (e.location || "Shop") === checkoutLocation &&
+                            !selectedElsewhere.has(e.id)
                         );
 
                         return (
                             <div key={item.id} className="p-4 rounded-lg border border-border bg-card space-y-3">
                                 <div className="flex items-start gap-3">
                                     <Checkbox 
-                                        checked={true}
+                                        checked={isChecked}
+                                        disabled={item.category === "Computer"}
+                                        onCheckedChange={(checked) => handleItemToggle(item, checked === true)}
                                         className="mt-1"
                                     />
                                     <div className="flex-1">
                                         <div className="flex justify-between">
-                                            <span className="font-medium">{item.category}</span>
+                                            <span className="font-medium">
+                                              {item.category}
+                                              {item.variant ? ` · ${item.variant}` : ""}
+                                            </span>
                                             <Badge variant={isOriginal ? "outline" : "secondary"} className="font-mono text-[10px]">
-                                                {isOriginal ? 'ORIGINAL' : 'REPLACEMENT'}
+                                                {isOriginal ? 'ORIGINAL' : isChecked ? 'REPLACEMENT' : 'NOT TAKING'}
                                             </Badge>
                                         </div>
                                         
@@ -1316,7 +1352,7 @@ function SystemCheckoutModal({
                                 <div className="pl-7 flex flex-wrap gap-2 items-center">
                                     {/* Swap Dropdown */}
                                     <Select 
-                                        value={currentSelectedId} 
+                                        value={currentSelectedId || undefined} 
                                         onValueChange={(val) => handleSwap(item.id, val)}
                                     >
                                         <SelectTrigger className="h-8 w-[220px] text-xs">
@@ -1328,11 +1364,17 @@ function SystemCheckoutModal({
                                                 Original: {item.name} ({item.id})
                                               </SelectItem>
                                             )}
-                                            {replacements.map(rep => (
-                                                <SelectItem key={rep.id} value={rep.id}>
-                                                    Available: {rep.name} ({rep.id})
-                                                </SelectItem>
-                                            ))}
+                                            {replacements.length > 0 ? (
+                                              replacements.map(rep => (
+                                                  <SelectItem key={rep.id} value={rep.id}>
+                                                      Available: {rep.name} ({rep.id})
+                                                  </SelectItem>
+                                              ))
+                                            ) : !isAvailable ? (
+                                              <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                                No matching parts available at {checkoutLocation}.
+                                              </div>
+                                            ) : null}
                                         </SelectContent>
                                     </Select>
 
