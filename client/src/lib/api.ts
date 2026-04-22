@@ -169,6 +169,13 @@ export const api = {
       if (!res.ok) throw new Error('Failed to resolve swap');
       await res.json();
     },
+    cleanupStaleCheckoutNotes: async (): Promise<{ updatedCount: number }> => {
+      const res = await fetch(`${API_BASE}/equipment/cleanup/stale-checkout-notes`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error('Failed to clean stale checkout notes');
+      return res.json();
+    },
   },
 
   systems: {

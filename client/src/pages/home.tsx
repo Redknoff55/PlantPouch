@@ -4055,6 +4055,21 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
+  const handleCleanupStaleCheckoutNotes = async () => {
+    try {
+      const result = await api.equipment.cleanupStaleCheckoutNotes();
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
+      toast.success(
+        result.updatedCount > 0
+          ? `Cleaned up ${result.updatedCount} stale checkout note${result.updatedCount === 1 ? "" : "s"}.`
+          : "No stale checkout notes found."
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clean stale checkout notes.");
+    }
+  };
+
   const handleSaveSystemTemplate = async (
     systemColor: string,
     requirements: SystemRequirement[],
@@ -4740,17 +4755,24 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             <TabsContent value="good" className="mt-4 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-sm font-semibold">Ready Systems</div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setStageInitialColor(null);
-                    setIsStageOpen(true);
-                  }}
-                >
-                  <MapPin className="mr-2 h-4 w-4" />
-                  Stage System
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {canManageEquipment && (
+                    <Button variant="outline" size="sm" onClick={handleCleanupStaleCheckoutNotes}>
+                      Clean Up Notes
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setStageInitialColor(null);
+                      setIsStageOpen(true);
+                    }}
+                  >
+                    <MapPin className="mr-2 h-4 w-4" />
+                    Stage System
+                  </Button>
+                </div>
               </div>
               {availableSystemItems.length === 0 ? (
                 <div className="text-xs text-muted-foreground">No systems ready right now.</div>

@@ -39,6 +39,9 @@ const parseDueDateString = (value: string) => {
   return date;
 };
 
+const isCheckoutNote = (notes?: string | null) =>
+  typeof notes === "string" && /^Checked out under WO\b/i.test(notes.trim());
+
 const brandingPath = process.env.BRANDING_PATH || path.join(process.cwd(), "data", "branding.json");
 
 const loadBrandingOverrides = async () => {
@@ -143,6 +146,11 @@ export async function registerRoutes(
   app.patch("/api/equipment/:id", async (req, res) => {
     try {
       const currentId = req.params.id;
+      const existing = await storage.getEquipment(currentId);
+      if (!existing) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+
       const updatePayload = { ...req.body } as Partial<InsertEquipment>;
       const dueDateInput: unknown = req.body?.dueDate;
       if (typeof dueDateInput === "string") {
@@ -165,10 +173,6 @@ export async function registerRoutes(
           return res.status(400).json({ error: "Equipment ID is required." });
         }
         if (requestedIdRaw !== currentId) {
-          const existing = await storage.getEquipment(currentId);
-          if (!existing) {
-            return res.status(404).json({ error: "Equipment not found" });
-          }
           const conflict = await storage.getEquipment(requestedIdRaw);
           if (conflict) {
             return res.status(400).json({ error: "Another item already uses that ID." });
@@ -190,6 +194,15 @@ export async function registerRoutes(
         }
       }
 
+      if (updatePayload.status === "available") {
+        updatePayload.workOrder = null;
+        updatePayload.checkedOutBy = null;
+        updatePayload.checkedOutAt = null;
+        if (typeof updatePayload.notes === "undefined" && isCheckoutNote(existing.notes)) {
+          updatePayload.notes = null;
+        }
+      }
+
       if (updatePayload.location === "Shop" && updatePayload.status === "available") {
         updatePayload.temporarySystemColor = null;
         updatePayload.swappedFromId = null;
@@ -203,6 +216,35 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating equipment:", error);
       res.status(500).json({ error: "Failed to update equipment" });
+    }
+  });
+
+  app.post("/api/equipment/cleanup/stale-checkout-notes", async (_req, res) => {
+    try {
+      const allEquipment = await storage.getAllEquipment();
+      const staleItems = allEquipment.filter((item) => {
+        const hasOpenWorkOrder = typeof item.workOrder === "string" && item.workOrder.trim().length > 0;
+        return item.status === "available" && !hasOpenWorkOrder && isCheckoutNote(item.notes);
+      });
+
+      await Promise.all(
+        staleItems.map((item) =>
+          storage.updateEquipment(item.id, {
+            notes: null,
+            ...(item.location === "Shop"
+              ? {
+                  temporarySystemColor: null,
+                  swappedFromId: null,
+                }
+              : {}),
+          })
+        )
+      );
+
+      res.json({ updatedCount: staleItems.length });
+    } catch (error) {
+      console.error("Error cleaning stale checkout notes:", error);
+      res.status(500).json({ error: "Failed to clean stale checkout notes" });
     }
   });
 
@@ -711,6 +753,7 @@ export async function registerRoutes(
       const systemItems = allEquipment.filter(
         (item) => (item.temporarySystemColor || item.systemColor) === req.params.color
       );
+      const stageDetails = `${validated.stagedBy} staged ${req.params.color} system at ${validated.stagingLocation}${validated.valveNumber ? ` for valve ${validated.valveNumber}` : ""}${validated.notes ? ` (${validated.notes})` : ""}`;
 
       await Promise.all(
         systemItems.map((item) =>
@@ -719,6 +762,7 @@ export async function registerRoutes(
             workOrder: null,
             checkedOutBy: null,
             checkedOutAt: null,
+            notes: stageDetails,
           })
         )
       );
@@ -728,7 +772,7 @@ export async function registerRoutes(
           storage.addEquipmentHistory({
             equipmentId: item.id,
             action: "stage",
-            details: `${validated.stagedBy} staged ${req.params.color} system at ${validated.stagingLocation}${validated.valveNumber ? ` for valve ${validated.valveNumber}` : ""}${validated.notes ? ` (${validated.notes})` : ""}`,
+            details: stageDetails,
             workOrder: item.workOrder || validated.sourceWorkOrder || undefined,
           })
         )
