@@ -709,16 +709,16 @@ function ActionModal({
 
                 {canManageEquipment && isBorrowedItem && (
                   <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-sm space-y-2">
-                    <div className="text-xs font-semibold uppercase text-muted-foreground">Borrowed Item</div>
+                    <div className="text-xs font-semibold uppercase text-muted-foreground">Temporary Assignment</div>
                     <div className="text-xs text-muted-foreground">
-                      Borrowed to {equipment.temporarySystemColor ?? "system"}
+                      Temporarily assigned to {equipment.temporarySystemColor ?? "system"}
                     </div>
                     <Button
                       variant="outline"
                       className="w-full"
                       onClick={() => onReturnBorrowed?.(equipment)}
                     >
-                      Clear Borrowed State
+                      Clear Temporary Assignment
                     </Button>
                   </div>
                 )}
@@ -1089,7 +1089,7 @@ function SystemCheckoutModal({
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
-    if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "missing";
   };
@@ -2507,7 +2507,7 @@ function TransferSystemModal({
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
-    if (item.temporarySystemColor) return `borrowed to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "missing";
   };
@@ -3215,7 +3215,7 @@ function ResolveBorrowedModal({
         <div className="max-h-[calc(100dvh-3rem)] overflow-y-auto p-6 space-y-6 sm:max-h-[90vh]">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-bold">Resolve Borrowed Part</h2>
+              <h2 className="text-xl font-bold">Resolve Temporary Assignment</h2>
               <p className="text-xs text-muted-foreground">
                 {borrowedItem.id} in {borrowedItem.temporarySystemColor ?? borrowedItem.systemColor ?? "system"}
               </p>
@@ -4135,7 +4135,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "Broken";
     if (item.status === "checked_out") return "Checked out";
-    if (item.temporarySystemColor) return `Borrowed to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor) return `Temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "Missing";
   };
@@ -4372,9 +4372,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       });
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
       queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
-      toast.success(`${borrowedItem.id} returned to original system.`);
+      toast.success(`${borrowedItem.id} returned to its original system.`);
     } catch {
-      toast.error("Failed to return borrowed component.");
+      toast.error("Failed to clear temporary assignment.");
     }
   };
 
@@ -4388,9 +4388,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
       queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
       setBorrowedToResolve(null);
-      toast.success("Borrowed component updated.");
+      toast.success("Temporary assignment updated.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to resolve borrowed component.");
+      toast.error(error instanceof Error ? error.message : "Failed to resolve temporary assignment.");
     }
   };
 
@@ -4732,7 +4732,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
               <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
               <TabsTrigger value="borrowed">
-                Borrowed ({equipment.filter((item) => item.swappedFromId).length})
+                Temporary Assignments ({equipment.filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor)).length})
               </TabsTrigger>
             </TabsList>
 
@@ -4973,17 +4973,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </TabsContent>
 
             <TabsContent value="borrowed" className="mt-4 space-y-2">
-              <div className="text-sm font-semibold">Borrowed components</div>
-              {equipment.filter((item) => item.swappedFromId).length === 0 ? (
-                <div className="text-xs text-muted-foreground">No borrowed components.</div>
+              <div className="text-sm font-semibold">Temporary assignments</div>
+              {equipment.filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor)).length === 0 ? (
+                <div className="text-xs text-muted-foreground">No temporary assignments.</div>
               ) : (
                 <div className="space-y-1">
                   {equipment
-                    .filter((item) => item.swappedFromId)
+                    .filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor))
                     .map((item) => (
                       <div key={item.id} className="flex items-center justify-between gap-2 text-xs font-medium">
                         <span>
-                          {item.temporarySystemColor} borrowed {item.originalSystemColor || item.systemColor || "Unassigned"} {item.id}
+                          {item.id} temporarily assigned to {item.temporarySystemColor || "system"} from {item.originalSystemColor || item.systemColor || "Unassigned"}
                         </span>
                         {canManageEquipment && (
                           <Button
