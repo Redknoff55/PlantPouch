@@ -1089,7 +1089,7 @@ function SystemCheckoutModal({
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
-    if (item.temporarySystemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "missing";
   };
@@ -2507,7 +2507,7 @@ function TransferSystemModal({
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "broken";
     if (item.status === "checked_out") return "checked out";
-    if (item.temporarySystemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor) return `temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "missing";
   };
@@ -4076,7 +4076,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             item.category !== "Computer" &&
             item.systemColor === systemColor &&
             item.status === "available" &&
-            !item.temporarySystemColor &&
             !isRepairLocation(item.location)
         )
         .map((item) => item.id);
@@ -4101,6 +4100,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             data: {
               systemColor,
               originalSystemColor: systemColor,
+              temporarySystemColor: null,
+              swappedFromId: null,
             },
           })
         ),
@@ -4135,7 +4136,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     if (repairLabel) return repairLabel;
     if (item.status === "broken") return "Broken";
     if (item.status === "checked_out") return "Checked out";
-    if (item.temporarySystemColor) return `Temporarily assigned to ${item.temporarySystemColor}`;
+    if (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor) return `Temporarily assigned to ${item.temporarySystemColor}`;
     if ((item.location ?? "Shop") !== "Shop") return item.location ?? "Shop";
     return "Missing";
   };
