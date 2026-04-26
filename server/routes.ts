@@ -400,7 +400,10 @@ export async function registerRoutes(
             notes,
           });
 
-          if (item.temporarySystemColor) {
+          const isBorrowedAssignment =
+            !!item.temporarySystemColor && item.temporarySystemColor !== item.systemColor;
+
+          if (!isBorrowedAssignment && item.temporarySystemColor) {
             await storage.updateEquipment(item.id, {
               temporarySystemColor: null,
               swappedFromId: null,
@@ -513,12 +516,16 @@ export async function registerRoutes(
         notes: combinedNotes || undefined,
       });
 
-      if (equipment?.temporarySystemColor) {
-        await storage.updateEquipment(req.params.id, {
-          temporarySystemColor: null,
-          swappedFromId: null,
-        });
-        if (equipment.swappedFromId) {
+          const isBorrowedAssignment =
+            !!equipment?.temporarySystemColor &&
+            equipment.temporarySystemColor !== equipment.systemColor;
+
+          if (!isBorrowedAssignment && equipment?.temporarySystemColor) {
+            await storage.updateEquipment(req.params.id, {
+              temporarySystemColor: null,
+              swappedFromId: null,
+            });
+            if (equipment.swappedFromId) {
           await storage.updateEquipment(equipment.swappedFromId, {
             replacementId: null,
           });
@@ -820,12 +827,14 @@ export async function registerRoutes(
       }).parse(req.body);
 
       const borrowedItem = await storage.getEquipment(payload.borrowedId);
-      if (!borrowedItem?.swappedFromId) {
+      if (!borrowedItem) {
         return res.status(404).json({ error: "Borrowed item not found" });
       }
 
-      const originalItem = await storage.getEquipment(borrowedItem.swappedFromId);
-      if (!originalItem) {
+      const originalItem = borrowedItem.swappedFromId
+        ? await storage.getEquipment(borrowedItem.swappedFromId)
+        : null;
+      if (borrowedItem.swappedFromId && !originalItem) {
         return res.status(404).json({ error: "Original item not found" });
       }
 
@@ -841,10 +850,21 @@ export async function registerRoutes(
           checkedOutAt: null,
           location: payload.destinationLocation || borrowedItem.location || "Shop",
         });
+        if (originalItem) {
+          await storage.updateEquipment(originalItem.id, {
+            replacementId: null,
+          });
+        }
       } else {
         await storage.updateEquipment(borrowedItem.id, {
-          systemColor: currentSystemColor || borrowedItem.systemColor || undefined,
-          originalSystemColor: currentSystemColor || borrowedItem.originalSystemColor || undefined,
+          systemColor:
+            payload.action === "move_to_spares"
+              ? (borrowedItem.originalSystemColor || borrowedItem.systemColor || "Spare")
+              : (currentSystemColor || borrowedItem.systemColor || undefined),
+          originalSystemColor:
+            payload.action === "move_to_spares"
+              ? (borrowedItem.originalSystemColor || borrowedItem.systemColor || "Spare")
+              : (currentSystemColor || borrowedItem.originalSystemColor || undefined),
           temporarySystemColor: null,
           swappedFromId: null,
           status: "available",
@@ -859,21 +879,25 @@ export async function registerRoutes(
                 : (borrowedItem.location || "Shop"),
         });
 
-        await storage.updateEquipment(originalItem.id, {
-          systemColor: null,
-          replacementId: null,
-          location:
-            payload.action === "move_to_spares"
-              ? "Shop"
-              : payload.action === "set_custom_location"
-                ? (payload.destinationLocation || originalItem.location || "Shop")
-                : (originalItem.location || "Waiting on Repairs"),
-        });
+        if (originalItem) {
+          await storage.updateEquipment(originalItem.id, {
+            systemColor: null,
+            replacementId: null,
+            location:
+              payload.action === "move_to_spares"
+                ? "Shop"
+                : payload.action === "set_custom_location"
+                  ? (payload.destinationLocation || originalItem.location || "Shop")
+                  : (originalItem.location || "Waiting on Repairs"),
+          });
+        }
       }
 
-      await storage.updateEquipment(originalItem.id, {
-        replacementId: null,
-      });
+      if (originalItem) {
+        await storage.updateEquipment(originalItem.id, {
+          replacementId: null,
+        });
+      }
 
       await storage.addEquipmentHistory({
         equipmentId: borrowedItem.id,

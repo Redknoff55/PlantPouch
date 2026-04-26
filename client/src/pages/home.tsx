@@ -952,6 +952,7 @@ function SystemCheckoutModal({
   initialValveNumber?: string | null;
 }) {
   const { data: equipment = [] } = useEquipment();
+  const { data: systemConfigs = [] } = useSystemConfigs();
   const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedComputerColor, setSelectedComputerColor] = useState<string>("");
@@ -1014,12 +1015,89 @@ function SystemCheckoutModal({
     Yellow: "bg-yellow-500",
     Green: "bg-green-500",
   };
-  
-  const bagItems = equipment.filter(
-    (item) =>
-      item.category !== "Computer" &&
-      (item.temporarySystemColor || item.systemColor) === selectedBagColor
-  );
+
+  type CheckoutSlot = {
+    slotId: string;
+    category: string;
+    variant: string;
+    required: boolean;
+    originalItem: Equipment | null;
+    source: "computer" | "template" | "extra";
+  };
+
+  const getTemplateRequirementsForColor = (color: string): SystemRequirement[] => {
+    const config = systemConfigs.find((entry) => entry.systemColor === color);
+    if (config && config.requirements.length > 0) {
+      return config.requirements;
+    }
+    const baseItems = equipment.filter(
+      (item) => item.category !== "Computer" && item.systemColor === color
+    );
+    return inferRequirementsFromItems(baseItems);
+  };
+
+  const buildBagSlots = (color: string): CheckoutSlot[] => {
+    if (!color) return [];
+    const bagItemsForColor = equipment.filter(
+      (item) =>
+        item.category !== "Computer" &&
+        (item.temporarySystemColor || item.systemColor) === color
+    );
+    const requirements = getTemplateRequirementsForColor(color);
+    if (requirements.length === 0) {
+      return bagItemsForColor.map((item) => ({
+        slotId: item.id,
+        category: item.category,
+        variant: getVariantLabel(item.variant),
+        required: false,
+        originalItem: item,
+        source: "extra",
+      }));
+    }
+
+    const buckets = bagItemsForColor.reduce((acc, item) => {
+      const key = getRequirementKey(item.category, item.variant);
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {} as Record<string, Equipment[]>);
+
+    const requiredSlots: CheckoutSlot[] = requirements.flatMap((requirement, requirementIndex) => {
+      const key = getRequirementKey(requirement.category, requirement.variant);
+      const itemsForRequirement = buckets[key] ?? [];
+      return Array.from({ length: requirement.quantity }, (_, quantityIndex) => {
+        const existing = itemsForRequirement.shift() ?? null;
+        return {
+          slotId:
+            existing?.id ??
+            `missing:${key}:${requirementIndex + 1}:${quantityIndex + 1}`,
+          category: requirement.category,
+          variant: getVariantLabel(requirement.variant),
+          required: true,
+          originalItem: existing,
+          source: "template",
+        };
+      });
+    });
+
+    const extras = Object.values(buckets)
+      .flat()
+      .map((item) => ({
+        slotId: item.id,
+        category: item.category,
+        variant: getVariantLabel(item.variant),
+        required: false,
+        originalItem: item,
+        source: "extra" as const,
+      }));
+
+    return [...requiredSlots, ...extras];
+  };
+
+  const bagSlots = buildBagSlots(selectedBagColor);
+  const bagItems = bagSlots
+    .map((slot) => slot.originalItem)
+    .filter((item): item is Equipment => !!item);
   const selectedComputer = equipment.find((item) => item.id === selectedComputerId);
   const checkoutLocation = selectedComputer?.location || "Shop";
   const isAvailableAtLocation = (item: Equipment) =>
@@ -1028,8 +1106,19 @@ function SystemCheckoutModal({
     (item.location || "Shop") === checkoutLocation &&
     !isRepairLocation(item.location);
   const combinedItems = [
-    ...(selectedComputer ? [selectedComputer] : []),
-    ...bagItems,
+    ...(selectedComputer
+      ? [
+          {
+            slotId: selectedComputer.id,
+            category: "Computer",
+            variant: getVariantLabel(selectedComputer.variant),
+            required: true,
+            originalItem: selectedComputer,
+            source: "computer" as const,
+          },
+        ]
+      : []),
+    ...bagSlots,
   ];
 
   useEffect(() => {
@@ -1048,19 +1137,19 @@ function SystemCheckoutModal({
     const initialVerified: Record<string, string> = {
       [selected.id]: selected.id,
     };
-    const items = equipment.filter(
-      (item) =>
-        item.category !== "Computer" &&
-        (item.temporarySystemColor || item.systemColor) === initialSystemColor
-    );
+    const slots = buildBagSlots(initialSystemColor);
     const checkoutLocationForPreset = selected.location || "Shop";
-    items.forEach((item) => {
+    slots.forEach((slot) => {
+      if (!slot.originalItem) {
+        initialVerified[slot.slotId] = "";
+        return;
+      }
       const available =
-        item.status === "available" &&
-        !item.temporarySystemColor &&
-        (item.location || "Shop") === checkoutLocationForPreset &&
-        !isRepairLocation(item.location);
-      initialVerified[item.id] = available ? item.id : "";
+        slot.originalItem.status === "available" &&
+        !slot.originalItem.temporarySystemColor &&
+        (slot.originalItem.location || "Shop") === checkoutLocationForPreset &&
+        !isRepairLocation(slot.originalItem.location);
+      initialVerified[slot.slotId] = available ? slot.originalItem.id : "";
     });
 
     setSelectedComputerColor(initialSystemColor);
@@ -1069,7 +1158,7 @@ function SystemCheckoutModal({
     setVerifiedItems(initialVerified);
     setValveNumber(initialValveNumber ?? "");
     setStep(3);
-  }, [equipment, initialSystemColor, initialValveNumber, isOpen]);
+  }, [equipment, systemConfigs, initialSystemColor, initialValveNumber, isOpen]);
 
   const handleComputerSelect = (color: string) => {
     const candidates = equipment.filter(
@@ -1095,45 +1184,59 @@ function SystemCheckoutModal({
   };
 
   const missingBagItems = bagItems.filter((item) => !isAvailableAtLocation(item));
+  const templateMissingSlots = bagSlots.filter((slot) => slot.required && !slot.originalItem);
+  const unresolvedRequiredSlots = bagSlots.filter(
+    (slot) => slot.required && slot.category !== "Computer" && !verifiedItems[slot.slotId]
+  );
 
   const handleBagSelect = (color: string) => {
     const initialVerified: Record<string, string> = {};
-    const items = equipment.filter(
-      (item) =>
-        item.category !== "Computer" &&
-        (item.temporarySystemColor || item.systemColor) === color
-    );
+    const slots = buildBagSlots(color);
     if (selectedComputer) {
       initialVerified[selectedComputer.id] = selectedComputer.id;
     }
-    items.forEach((item) => {
-      initialVerified[item.id] = isAvailableAtLocation(item) ? item.id : "";
+    slots.forEach((slot) => {
+      if (!slot.originalItem) {
+        initialVerified[slot.slotId] = "";
+        return;
+      }
+      initialVerified[slot.slotId] = isAvailableAtLocation(slot.originalItem) ? slot.originalItem.id : "";
     });
     setSelectedBagColor(color);
     setVerifiedItems(initialVerified);
     setStep(3);
   };
 
-  const handleSwap = (originalId: string, newItemId: string) => {
+  const handleSwap = (slotId: string, newItemId: string) => {
     setVerifiedItems(prev => ({
       ...prev,
-      [originalId]: newItemId
+      [slotId]: newItemId
     }));
   };
 
-  const handleItemToggle = (item: Equipment, checked: boolean) => {
-    if (item.category === "Computer") return;
+  const handleItemToggle = (slot: CheckoutSlot, checked: boolean) => {
+    if (slot.category === "Computer") return;
     if (!checked) {
-      handleSwap(item.id, "");
+      handleSwap(slot.slotId, "");
       return;
     }
 
-    const fallbackSelection = isAvailableAtLocation(item) ? item.id : verifiedItems[item.id] || "";
-    handleSwap(item.id, fallbackSelection);
+    if (!slot.originalItem) {
+      return;
+    }
+
+    const fallbackSelection = isAvailableAtLocation(slot.originalItem)
+      ? slot.originalItem.id
+      : verifiedItems[slot.slotId] || "";
+    handleSwap(slot.slotId, fallbackSelection);
   };
 
   const handleSubmit = () => {
     if (!workOrder || !techName.trim()) return;
+    if (unresolvedRequiredSlots.length > 0) {
+      toast.error("Resolve all required missing components before checkout.");
+      return;
+    }
     
     // Collect all final IDs to checkout
     const finalIds = Object.values(verifiedItems).filter((id) => !!id);
@@ -1235,6 +1338,7 @@ function SystemCheckoutModal({
                         item.category !== "Computer" &&
                         (item.temporarySystemColor || item.systemColor) === color
                     );
+                    const slotsForBag = buildBagSlots(color);
                     const locationItems = itemsForBag.filter(
                       (item) => item.status === "available" && !isRepairLocation(item.location)
                     );
@@ -1245,6 +1349,10 @@ function SystemCheckoutModal({
                       uniqueLocations.length === 1 ? uniqueLocations[0] : "Mixed";
                     const isSameLocation = bagLocation === checkoutLocation;
                     const missingItems = itemsForBag.filter((item) => !isAvailableAtLocation(item));
+                    const missingTemplateSlots = slotsForBag.filter(
+                      (slot) => slot.required && !slot.originalItem
+                    );
+                    const totalGaps = missingItems.length + missingTemplateSlots.length;
                     return (
                       <Button
                         key={color}
@@ -1255,9 +1363,9 @@ function SystemCheckoutModal({
                       >
                         <span className="text-base font-semibold whitespace-normal break-words">{color} Bag</span>
                         {isSameLocation ? (
-                          missingItems.length > 0 ? (
+                          totalGaps > 0 ? (
                             <span className="text-xs text-muted-foreground whitespace-normal break-words">
-                              Missing {missingItems.length}
+                              Missing {totalGaps}
                             </span>
                           ) : (
                             <span className="text-xs text-emerald-600">Complete</span>
@@ -1284,56 +1392,83 @@ function SystemCheckoutModal({
                   <Button variant="ghost" size="sm" onClick={() => setStep(2)}>Change</Button>
                </div>
 
-               {missingBagItems.length > 0 && (
+               {(missingBagItems.length > 0 || templateMissingSlots.length > 0) && (
                  <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-                   Missing from bag: {missingBagItems.map((item) => `${item.name} (${getMissingLabel(item)})`).join(", ")}
+                   <div className="mb-1 font-semibold text-amber-700">Missing component from bag.</div>
+                   {templateMissingSlots.length > 0 && (
+                     <div className="mb-1">
+                       Template gaps: {templateMissingSlots.map((slot) => `${slot.category} (${slot.variant})`).join(", ")}
+                     </div>
+                   )}
+                   {missingBagItems.length > 0 && (
+                     <div>
+                       Missing from bag: {missingBagItems.map((item) => `${item.name} (${getMissingLabel(item)})`).join(", ")}
+                     </div>
+                   )}
+                   <div className="mt-1">Spare options are listed first in each replacement picker, followed by alternatives from other bags.</div>
                  </div>
                )}
 
                <div className="space-y-4">
                  <Label>Bag Components</Label>
                  <div className="space-y-3">
-                    {combinedItems.map(item => {
-                        const currentSelectedId = verifiedItems[item.id];
-                        const isAvailable = isAvailableAtLocation(item);
-                        const isOriginal = currentSelectedId === item.id && isAvailable;
+                    {combinedItems.map(slot => {
+                        const currentSelectedId = verifiedItems[slot.slotId];
+                        const originalItem = slot.originalItem;
+                        const isAvailable = originalItem ? isAvailableAtLocation(originalItem) : false;
+                        const isOriginal = !!originalItem && currentSelectedId === originalItem.id && isAvailable;
                         const selectedItem = equipment.find(e => e.id === currentSelectedId);
                         const isChecked = Boolean(currentSelectedId);
                         const selectedElsewhere = new Set(
                             Object.entries(verifiedItems)
-                              .filter(([originalId, selectedId]) => originalId !== item.id && Boolean(selectedId))
+                              .filter(([slotId, selectedId]) => slotId !== slot.slotId && Boolean(selectedId))
                               .map(([, selectedId]) => selectedId)
                         );
                         
                         // Find potential replacements that can actually fill this slot at the current location.
-                        const replacements = equipment.filter(e => 
-                            e.category === item.category && 
-                            (e.variant || "") === (item.variant || "") &&
-                            e.status === 'available' && 
-                            e.id !== item.id &&
-                            !e.temporarySystemColor &&
-                            (e.location || "Shop") === checkoutLocation &&
-                            !selectedElsewhere.has(e.id)
-                        );
+                        const replacements = slot.category === "Computer"
+                          ? []
+                          : equipment.filter(e => 
+                              e.category === slot.category && 
+                              getVariantLabel(e.variant) === getVariantLabel(slot.variant) &&
+                              e.status === 'available' && 
+                              e.id !== originalItem?.id &&
+                              !e.temporarySystemColor &&
+                              (e.location || "Shop") === checkoutLocation &&
+                              !selectedElsewhere.has(e.id)
+                            ).sort((a, b) => {
+                              const aSpare = (a.systemColor || "").trim().toLowerCase() === "spare" ? 0 : 1;
+                              const bSpare = (b.systemColor || "").trim().toLowerCase() === "spare" ? 0 : 1;
+                              if (aSpare !== bSpare) return aSpare - bSpare;
+                              return a.id.localeCompare(b.id);
+                            });
 
                         return (
-                            <div key={item.id} className="p-4 rounded-lg border border-border bg-card space-y-3">
+                            <div key={slot.slotId} className="p-4 rounded-lg border border-border bg-card space-y-3">
                                 <div className="flex items-start gap-3">
                                     <Checkbox 
                                         checked={isChecked}
-                                        disabled={item.category === "Computer"}
-                                        onCheckedChange={(checked) => handleItemToggle(item, checked === true)}
+                                        disabled={slot.category === "Computer"}
+                                        onCheckedChange={(checked) => handleItemToggle(slot, checked === true)}
                                         className="mt-1"
                                     />
                                     <div className="flex-1">
                                         <div className="flex justify-between">
                                             <span className="font-medium">
-                                              {item.category}
-                                              {item.variant ? ` · ${item.variant}` : ""}
+                                              {slot.category}
+                                              {slot.variant ? ` · ${slot.variant}` : ""}
                                             </span>
-                                            <Badge variant={isOriginal ? "outline" : "secondary"} className="font-mono text-[10px]">
-                                                {isOriginal ? 'ORIGINAL' : isChecked ? 'REPLACEMENT' : 'NOT TAKING'}
-                                            </Badge>
+                                            <div className="flex gap-2">
+                                              {slot.required && (
+                                                <Badge variant="outline" className="font-mono text-[10px]">REQUIRED</Badge>
+                                              )}
+                                              {slot.source === "extra" && (
+                                                <Badge variant="secondary" className="font-mono text-[10px]">EXTRA</Badge>
+                                              )}
+                                              <Badge variant={isOriginal ? "outline" : "secondary"} className="font-mono text-[10px]">
+                                                  {isOriginal ? 'ORIGINAL' : isChecked ? 'REPLACEMENT' : 'NOT TAKING'}
+                                              </Badge>
+                                            </div>
                                         </div>
                                         
                                         {currentSelectedId ? (
@@ -1342,7 +1477,9 @@ function SystemCheckoutModal({
                                             </div>
                                         ) : (
                                             <div className="text-sm text-amber-600">
-                                              Missing: {item.name} ({getMissingLabel(item)})
+                                              {originalItem
+                                                ? `Missing: ${originalItem.name} (${getMissingLabel(originalItem)})`
+                                                : `Missing required template part: ${slot.category} (${slot.variant})`}
                                             </div>
                                         )}
                                     </div>
@@ -1352,22 +1489,23 @@ function SystemCheckoutModal({
                                 <div className="pl-7 flex flex-wrap gap-2 items-center">
                                     {/* Swap Dropdown */}
                                     <Select 
+                                        disabled={slot.category === "Computer"}
                                         value={currentSelectedId || undefined} 
-                                        onValueChange={(val) => handleSwap(item.id, val)}
+                                        onValueChange={(val) => handleSwap(slot.slotId, val)}
                                     >
                                         <SelectTrigger className="h-8 w-[220px] text-xs">
                                             <SelectValue placeholder="Select equipment" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            {isAvailable && (
-                                              <SelectItem value={item.id}>
-                                                Original: {item.name} ({item.id})
+                                            {isAvailable && originalItem && (
+                                              <SelectItem value={originalItem.id}>
+                                                Original: {originalItem.name} ({originalItem.id})
                                               </SelectItem>
                                             )}
                                             {replacements.length > 0 ? (
                                               replacements.map(rep => (
                                                   <SelectItem key={rep.id} value={rep.id}>
-                                                      Available: {rep.name} ({rep.id})
+                                                      {(rep.systemColor || "").trim().toLowerCase() === "spare" ? "Spare first" : "Other bag"}: {rep.name} ({rep.id})
                                                   </SelectItem>
                                               ))
                                             ) : !isAvailable ? (
@@ -1382,8 +1520,8 @@ function SystemCheckoutModal({
                                     <Input 
                                         className="h-8 flex-1 text-xs" 
                                         placeholder="Report issue with original..."
-                                        value={issues[item.id] || ''}
-                                        onChange={(e) => setIssues(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                        value={issues[slot.slotId] || ''}
+                                        onChange={(e) => setIssues(prev => ({ ...prev, [slot.slotId]: e.target.value }))}
                                     />
                                 </div>
                             </div>
@@ -1422,10 +1560,15 @@ function SystemCheckoutModal({
                   <Button 
                     className="w-full h-12 text-lg font-bold" 
                     onClick={handleSubmit}
-                    disabled={!workOrder || !techName.trim() || !selectedComputerId}
+                    disabled={!workOrder || !techName.trim() || !selectedComputerId || unresolvedRequiredSlots.length > 0}
                   >
                     Check Out System
                   </Button>
+                  {unresolvedRequiredSlots.length > 0 && (
+                    <p className="text-xs text-amber-600">
+                      Select replacements for all required missing parts before checkout.
+                    </p>
+                  )}
                </div>
             </div>
           )}
@@ -4748,7 +4891,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
               <TabsTrigger value="sent">Sent ({repairSystems.length})</TabsTrigger>
               <TabsTrigger value="waiting">Waiting ({waitingSystems.length})</TabsTrigger>
               <TabsTrigger value="borrowed">
-                Temporary Assignments ({equipment.filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor)).length})
+                Borrowed Components ({equipment.filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor)).length})
               </TabsTrigger>
             </TabsList>
 
@@ -4996,7 +5139,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
             </TabsContent>
 
             <TabsContent value="borrowed" className="mt-4 space-y-2">
-              <div className="text-sm font-semibold">Temporary assignments</div>
+              <div className="text-sm font-semibold">Borrowed components to return</div>
+              <div className="text-xs text-muted-foreground">
+                Items borrowed during checkout stay here after check-in until they are resolved back to their home bag/location.
+              </div>
               {equipment.filter((item) => item.swappedFromId || (item.temporarySystemColor && item.temporarySystemColor !== item.systemColor)).length === 0 ? (
                 <div className="text-xs text-muted-foreground">No temporary assignments.</div>
               ) : (
