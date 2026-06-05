@@ -6,6 +6,7 @@ import {
   insertSystemSchema,
   insertSystemConfigSchema,
   insertStagedSystemSchema,
+  insertOutageLocationNoteSchema,
   type InsertEquipment,
 } from "@shared/schema";
 import { brandingSchema } from "@shared/branding";
@@ -815,6 +816,33 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error clearing staged system on checkout:", error);
       res.status(500).json({ error: "Failed to clear staged system" });
+    }
+  });
+
+  app.get("/api/outage-board/location-notes", async (_req, res) => {
+    try {
+      const notes = await storage.getAllOutageLocationNotes();
+      res.json(notes);
+    } catch (error) {
+      console.error("Error fetching outage board notes:", error);
+      res.status(500).json({ error: "Failed to fetch outage board notes" });
+    }
+  });
+
+  app.put("/api/outage-board/location-notes/:location", async (req, res) => {
+    try {
+      const validated = insertOutageLocationNoteSchema.parse({
+        ...req.body,
+        location: req.params.location,
+      });
+      const note = await storage.upsertOutageLocationNote(validated);
+      res.json(note);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error saving outage board note:", error);
+      res.status(500).json({ error: "Failed to save outage board note" });
     }
   });
 

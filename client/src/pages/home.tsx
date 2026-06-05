@@ -20,6 +20,8 @@ import {
   useStagedSystems,
   useSaveStagedSystem,
   useClearStagedSystem,
+  useOutageLocationNotes,
+  useSaveOutageLocationNote,
 } from "@/lib/hooks";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -3757,11 +3759,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const { data: equipment = [], isLoading } = useEquipment();
   const { data: systemConfigs = [] } = useSystemConfigs();
   const { data: stagedSystems = [] } = useStagedSystems();
+  const { data: outageLocationNotes = [] } = useOutageLocationNotes();
   const adminEnabled = mode === "admin";
   const updateEquipment = useUpdateEquipment();
   const saveSystemConfig = useSaveSystemConfig();
   const saveStagedSystem = useSaveStagedSystem();
   const clearStagedSystem = useClearStagedSystem();
+  const saveOutageLocationNote = useSaveOutageLocationNote();
   const queryClient = useQueryClient();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -3802,6 +3806,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   }>>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [locationFilter, setLocationFilter] = useState("Shop");
+  const [boardNoteDrafts, setBoardNoteDrafts] = useState<Record<string, string>>({});
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -4094,6 +4099,23 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   }, [customLocations]);
 
   useEffect(() => {
+    setBoardNoteDrafts((prev) => {
+      const next = { ...prev };
+      outageLocationNotes.forEach((entry) => {
+        if (typeof next[entry.location] === "undefined") {
+          next[entry.location] = entry.note;
+        }
+      });
+      outageBoardDefaultLocations.forEach((location) => {
+        if (typeof next[location] === "undefined") {
+          next[location] = "";
+        }
+      });
+      return next;
+    });
+  }, [outageLocationNotes]);
+
+  useEffect(() => {
     if (!isActivityOpen) return;
     let active = true;
     setIsHistoryLoading(true);
@@ -4205,6 +4227,26 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     }
   };
 
+  const handleSaveBoardNote = async (location: string) => {
+    try {
+      const nextNote = boardNoteDrafts[location]?.trim() || "";
+      await saveOutageLocationNote.mutateAsync({
+        location,
+        data: {
+          location,
+          note: nextNote,
+        },
+      });
+      setBoardNoteDrafts((prev) => ({
+        ...prev,
+        [location]: nextNote,
+      }));
+      toast.success(`${location} note saved.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save board note.");
+    }
+  };
+
   const handleCleanupStaleCheckoutNotes = async () => {
     try {
       const result = await api.equipment.cleanupStaleCheckoutNotes();
@@ -4290,6 +4332,131 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   const systemsAtLocation = systemLocationSummary.filter(
     (system) => system.location === locationFilter
   );
+
+  const outageLocationNoteMap = new Map(
+    outageLocationNotes.map((entry) => [entry.location, entry])
+  );
+  const outageBoardDefaultLocations = [
+    "Shop",
+    "AUX Building",
+    "Containment C-Van",
+    "Turbine Building",
+    "In Progress",
+    "Needs Attention",
+    "Sent for Repairs",
+    "Waiting on Repairs",
+  ];
+  const outageBoardLocations = Array.from(
+    new Set([
+      ...outageBoardDefaultLocations,
+      ...stagedSystems.map((staged) => staged.stagingLocation),
+      ...locationOptions.filter((location) => !["Repairs"].includes(location)),
+      ...outageLocationNotes.map((entry) => entry.location),
+    ])
+  );
+  type OutageBoardCard = {
+    key: string;
+    color: string;
+    status: string;
+    detail: string;
+    badgeVariant: "default" | "secondary" | "outline" | "destructive";
+    missingLabels: string[];
+    items: Equipment[];
+    action?: "stage" | "clear" | "resolve";
+  };
+  const outageCardsByLocation = outageBoardLocations.reduce((acc, location) => {
+    acc[location] = [] as OutageBoardCard[];
+    return acc;
+  }, {} as Record<string, OutageBoardCard[]>);
+
+  availableSystemItems.forEach((group) => {
+    outageCardsByLocation.Shop.push({
+      key: `ready-${group.color}`,
+      color: group.color,
+      status: "Ready in Shop",
+      detail: `${group.effectiveAvailableCount}/${group.expectedCount} required components ready`,
+      badgeVariant: group.missingRequirements.length === 0 ? "default" : "secondary",
+      missingLabels: group.missingRequirements.map(
+        (requirement) => `${requirement.missing} x ${requirement.variant} ${requirement.category}`
+      ),
+      items: group.items,
+      action: "stage",
+    });
+  });
+
+  stagedSystemItems.forEach((group) => {
+    const staged = group.staged as StagedSystem;
+    if (!outageCardsByLocation[staged.stagingLocation]) {
+      outageCardsByLocation[staged.stagingLocation] = [];
+    }
+    outageCardsByLocation[staged.stagingLocation].push({
+      key: `staged-${group.color}`,
+      color: group.color,
+      status: "Staged",
+      detail: [
+        staged.valveNumber ? `Valve ${staged.valveNumber}` : null,
+        staged.stagedBy ? `by ${staged.stagedBy}` : null,
+        staged.notes || null,
+      ].filter(Boolean).join(" - ") || "Ready for outage work",
+      badgeVariant: group.missingRequirements.length === 0 && staged.missingItems.length === 0 ? "default" : "secondary",
+      missingLabels: [
+        ...group.missingRequirements.map(
+          (requirement) => `${requirement.missing} x ${requirement.variant} ${requirement.category}`
+        ),
+        ...staged.missingItems.map((item) => item.variant ? `${item.category} (${item.variant})` : item.category),
+      ],
+      items: group.items,
+      action: "clear",
+    });
+  });
+
+  checkedOutGroups.forEach((group) => {
+    const color = group.systemColor || "Single Item";
+    outageCardsByLocation["In Progress"].push({
+      key: `progress-${group.key}`,
+      color,
+      status: "In Progress",
+      detail: [
+        group.valveNumber ? `Valve ${group.valveNumber}` : null,
+        group.tech,
+        group.workOrder !== "-" ? `WO ${group.workOrder}` : null,
+      ].filter(Boolean).join(" - "),
+      badgeVariant: "secondary",
+      missingLabels: [],
+      items: group.items,
+    });
+  });
+
+  repairItems.forEach((group) => {
+    outageCardsByLocation["Sent for Repairs"].push({
+      key: `sent-${group.color}`,
+      color: group.color,
+      status: "Sent for Repairs",
+      detail: `${group.items.length} item${group.items.length === 1 ? "" : "s"}`,
+      badgeVariant: "destructive",
+      missingLabels: [],
+      items: group.items,
+      action: "resolve",
+    });
+  });
+
+  waitingItems.forEach((group) => {
+    outageCardsByLocation["Waiting on Repairs"].push({
+      key: `waiting-${group.color}`,
+      color: group.color,
+      status: "Waiting on Repairs",
+      detail: `${group.items.length} item${group.items.length === 1 ? "" : "s"}`,
+      badgeVariant: "secondary",
+      missingLabels: [],
+      items: group.items,
+      action: "resolve",
+    });
+  });
+
+  const visibleOutageBoardLocations = outageBoardLocations.filter((location) => {
+    const note = outageLocationNoteMap.get(location)?.note?.trim();
+    return note || outageCardsByLocation[location]?.length > 0 || outageBoardDefaultLocations.includes(location);
+  });
 
   const isBagItemAvailable = (item: Equipment) =>
     item.status === "available" &&
@@ -4685,6 +4852,148 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                 <span className="block text-3xl font-bold font-mono">{stats.total}</span>
                 <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total</span>
             </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">Outage Board</h2>
+              <p className="text-xs text-muted-foreground">
+                Whiteboard view for staged systems, active work, location notes, and repair needs.
+              </p>
+            </div>
+            {canManageEquipment && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setStageInitialColor(null);
+                  setIsStageOpen(true);
+                }}
+              >
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Stage System
+              </Button>
+            )}
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {visibleOutageBoardLocations.map((location) => {
+              const cards = outageCardsByLocation[location] ?? [];
+              const savedNote = outageLocationNoteMap.get(location)?.note ?? "";
+              const draftNote = boardNoteDrafts[location] ?? savedNote;
+              const noteDirty = draftNote !== savedNote;
+              return (
+                <div key={location} className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-primary" />
+                        <h3 className="text-sm font-semibold">{location}</h3>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {cards.length} system{cards.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    {noteDirty && (
+                      <Badge variant="outline" className="text-[10px]">
+                        Unsaved
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Textarea
+                      className="min-h-16 resize-none text-xs"
+                      placeholder={`Add ${location} board note...`}
+                      value={draftNote}
+                      onChange={(event) =>
+                        setBoardNoteDrafts((prev) => ({
+                          ...prev,
+                          [location]: event.target.value,
+                        }))
+                      }
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2 text-[10px]"
+                        onClick={() => handleSaveBoardNote(location)}
+                        disabled={!noteDirty || saveOutageLocationNote.isPending}
+                      >
+                        Save Note
+                      </Button>
+                    </div>
+                  </div>
+
+                  {cards.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border/60 px-3 py-4 text-center text-xs text-muted-foreground">
+                      No systems on this part of the board.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {cards.map((card) => (
+                        <div key={card.key} className="rounded-md border border-border/60 bg-background px-3 py-2 text-xs space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-semibold">{card.color} System</div>
+                              <div className="text-muted-foreground">{card.detail}</div>
+                            </div>
+                            <Badge variant={card.badgeVariant} className="shrink-0 text-[10px]">
+                              {card.status}
+                            </Badge>
+                          </div>
+                          {card.missingLabels.length > 0 && (
+                            <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300">
+                              Needs: {card.missingLabels.join(", ")}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
+                            <span>{card.items.length} component{card.items.length === 1 ? "" : "s"}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {card.action === "stage" && canManageEquipment && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={() => {
+                                    setStageInitialColor(card.color);
+                                    setIsStageOpen(true);
+                                  }}
+                                >
+                                  Stage
+                                </Button>
+                              )}
+                              {card.action === "clear" && canManageEquipment && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[10px]"
+                                  onClick={() => handleClearStaging(card.color)}
+                                >
+                                  Clear
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[10px]"
+                                onClick={() => setSelectedEquipmentId(card.items[0]?.id ?? null)}
+                                disabled={card.items.length === 0}
+                              >
+                                Open
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {canManageEquipment && (

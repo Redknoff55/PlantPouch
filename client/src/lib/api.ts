@@ -7,6 +7,8 @@ import type {
   InsertSystemConfig,
   StagedSystem,
   InsertStagedSystem,
+  OutageLocationNote,
+  InsertOutageLocationNote,
 } from "@shared/schema";
 import type { BrandingConfig } from "@shared/branding";
 
@@ -257,6 +259,26 @@ export const api = {
       });
       if (!res.ok) throw new Error('Failed to clear staged system for checkout');
       await res.json();
+    },
+  },
+
+  outageBoard: {
+    getLocationNotes: async (): Promise<OutageLocationNote[]> => {
+      const res = await fetch(`${API_BASE}/outage-board/location-notes`);
+      if (!res.ok) throw new Error('Failed to fetch outage board notes');
+      return res.json();
+    },
+    saveLocationNote: async (
+      location: string,
+      data: InsertOutageLocationNote
+    ): Promise<OutageLocationNote> => {
+      const res = await fetch(`${API_BASE}/outage-board/location-notes/${encodeURIComponent(location)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to save outage board note');
+      return res.json();
     },
   },
 };

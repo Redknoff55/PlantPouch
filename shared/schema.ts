@@ -72,6 +72,15 @@ export const stagedSystems = pgTable("staged_systems", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const outageLocationNotes = pgTable("outage_location_notes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  location: text("location").notNull().unique(),
+  note: text("note").notNull().default(""),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const equipmentHistory = pgTable("equipment_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: 'cascade' }),
@@ -111,6 +120,15 @@ export const insertStagedSystemSchema = createInsertSchema(stagedSystems).omit({
   missingItems: z.array(stagedSystemMissingItemSchema).default([]),
 });
 
+export const insertOutageLocationNoteSchema = createInsertSchema(outageLocationNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  location: z.string().min(1),
+  note: z.string().default(""),
+});
+
 export type Equipment = typeof equipment.$inferSelect;
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type EquipmentHistory = typeof equipmentHistory.$inferSelect;
@@ -123,3 +141,5 @@ export type InsertSystemConfig = z.infer<typeof insertSystemConfigSchema>;
 export type StagedSystemMissingItem = z.infer<typeof stagedSystemMissingItemSchema>;
 export type StagedSystem = typeof stagedSystems.$inferSelect;
 export type InsertStagedSystem = z.infer<typeof insertStagedSystemSchema>;
+export type OutageLocationNote = typeof outageLocationNotes.$inferSelect;
+export type InsertOutageLocationNote = z.infer<typeof insertOutageLocationNoteSchema>;

@@ -5,6 +5,7 @@ import type {
   InsertSystem,
   InsertSystemConfig,
   InsertStagedSystem,
+  InsertOutageLocationNote,
 } from "@shared/schema";
 
 export function useEquipment() {
@@ -191,6 +192,24 @@ export function useClearStagedSystem() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+export function useOutageLocationNotes() {
+  return useQuery({
+    queryKey: ['outage-location-notes'],
+    queryFn: api.outageBoard.getLocationNotes,
+  });
+}
+
+export function useSaveOutageLocationNote() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ location, data }: { location: string; data: InsertOutageLocationNote }) =>
+      api.outageBoard.saveLocationNote(location, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outage-location-notes'] });
     },
   });
 }

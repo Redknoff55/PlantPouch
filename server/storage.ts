@@ -9,11 +9,14 @@ import {
   type InsertSystemConfig,
   type StagedSystem,
   type InsertStagedSystem,
+  type OutageLocationNote,
+  type InsertOutageLocationNote,
   equipment as equipmentTable,
   equipmentHistory as equipmentHistoryTable,
   systems as systemsTable,
   systemConfigs as systemConfigsTable,
   stagedSystems as stagedSystemsTable,
+  outageLocationNotes as outageLocationNotesTable,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -51,6 +54,11 @@ export interface IStorage {
   getStagedSystem(systemColor: string): Promise<StagedSystem | undefined>;
   upsertStagedSystem(stagedSystem: InsertStagedSystem): Promise<StagedSystem>;
   deleteStagedSystem(systemColor: string): Promise<boolean>;
+
+  // Outage board location notes
+  getAllOutageLocationNotes(): Promise<OutageLocationNote[]>;
+  getOutageLocationNote(location: string): Promise<OutageLocationNote | undefined>;
+  upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -209,6 +217,36 @@ export class DatabaseStorage implements IStorage {
       .where(eq(stagedSystemsTable.systemColor, systemColor))
       .returning();
     return result.length > 0;
+  }
+
+  async getAllOutageLocationNotes(): Promise<OutageLocationNote[]> {
+    return await db.select().from(outageLocationNotesTable).orderBy(outageLocationNotesTable.location);
+  }
+
+  async getOutageLocationNote(location: string): Promise<OutageLocationNote | undefined> {
+    const result = await db
+      .select()
+      .from(outageLocationNotesTable)
+      .where(eq(outageLocationNotesTable.location, location));
+    return result[0];
+  }
+
+  async upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote> {
+    const existing = await this.getOutageLocationNote(note.location);
+    if (existing) {
+      const result = await db
+        .update(outageLocationNotesTable)
+        .set({
+          ...note,
+          updatedAt: new Date(),
+        })
+        .where(eq(outageLocationNotesTable.location, note.location))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db.insert(outageLocationNotesTable).values(note).returning();
+    return result[0];
   }
 }
 
