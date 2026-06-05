@@ -174,6 +174,11 @@ const inferRequirementsFromItems = (items: Equipment[]): SystemRequirement[] =>
     }, {} as Record<string, SystemRequirement>)
   ).sort((a, b) => a.category.localeCompare(b.category) || a.variant.localeCompare(b.variant));
 
+const compareEquipmentIds = (a: Equipment, b: Equipment) =>
+  a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: "base" });
+
+const sortEquipmentById = (items: Equipment[]) => [...items].sort(compareEquipmentIds);
+
 // --- Components ---
 
 function StatusBadge({ status }: { status: string }) {
@@ -3893,9 +3898,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         acc[key].items.push(item);
         return acc;
       }, {} as Record<string, { key: string; systemColor: string | null; tech: string; workOrder: string; valveNumber: string | null; items: Equipment[] }>)
-  ).sort((a, b) => {
-    const aTime = a.items[0]?.checkedOutAt ? new Date(a.items[0].checkedOutAt).getTime() : 0;
-    const bTime = b.items[0]?.checkedOutAt ? new Date(b.items[0].checkedOutAt).getTime() : 0;
+  )
+  .map((group) => ({ ...group, items: sortEquipmentById(group.items) }))
+  .sort((a, b) => {
+    const aTime = Math.max(...a.items.map((item) => item.checkedOutAt ? new Date(item.checkedOutAt).getTime() : 0));
+    const bTime = Math.max(...b.items.map((item) => item.checkedOutAt ? new Date(item.checkedOutAt).getTime() : 0));
     return bTime - aTime;
   });
 
@@ -3915,7 +3922,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   );
 
   const activeComponentsForSystem = (color: string) =>
-    equipment.filter(
+    sortEquipmentById(equipment).filter(
       (item) =>
         (item.temporarySystemColor || item.systemColor) === color &&
         item.status === "available" &&
@@ -3974,7 +3981,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
   const groupItemsBySystem = (items: Equipment[]) =>
     Object.values(
-      items.reduce((acc, item) => {
+      sortEquipmentById(items).reduce((acc, item) => {
         const key = item.temporarySystemColor || item.systemColor || "Unassigned";
         if (!acc[key]) {
           acc[key] = { color: key, items: [] as Equipment[] };
@@ -3982,7 +3989,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
         acc[key].items.push(item);
         return acc;
       }, {} as Record<string, { color: string; items: Equipment[] }>)
-    );
+    ).sort((a, b) => a.color.localeCompare(b.color, undefined, { numeric: true, sensitivity: "base" }));
 
   const goodSystemItems = systemStatuses.map((system) => ({
     color: system.color,
@@ -4300,7 +4307,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
   };
 
   const bagPreviewItems = bagPreviewColor !== "none"
-    ? equipment.filter(
+    ? sortEquipmentById(equipment).filter(
         (item) => item.category !== "Computer" && item.systemColor === bagPreviewColor
       )
     : [];
@@ -4316,13 +4323,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
     return effectiveColor === inventoryColorFilter;
   });
   const inventoryGrouped = Object.entries(
-    inventoryFiltered.reduce((acc, item) => {
+    sortEquipmentById(inventoryFiltered).reduce((acc, item) => {
       const key = item.temporarySystemColor || item.systemColor || "Unassigned";
       if (!acc[key]) acc[key] = [];
       acc[key].push(item);
       return acc;
     }, {} as Record<string, Equipment[]>)
-  ).sort(([a], [b]) => a.localeCompare(b));
+  ).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -4682,45 +4689,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
 
         {canManageEquipment && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex-1">
-                <Input
-                  placeholder="Search equipment..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => selectAllFiltered(inventoryFiltered.map((item) => item.id))}
-                  disabled={inventoryFiltered.length === 0}
-                >
-                  Select All
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={clearSelection}
-                  disabled={selectedIds.length === 0}
-                >
-                  Clear
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setIsBulkEditOpen(true)}
-                  disabled={selectedIds.length === 0}
-                >
-                  Bulk Edit ({selectedIds.length})
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {canManageEquipment && (
-          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold tracking-tight">Locations</h2>
@@ -4813,8 +4781,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                   const label = group.systemColor
                     ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}${valveSuffix}`
                     : `${sample?.id} checked out by ${group.tech} at WO ${group.workOrder}${valveSuffix}`;
-                  const time = sample?.checkedOutAt
-                    ? format(new Date(sample.checkedOutAt), "HH:mm dd/MM")
+                  const latestCheckedOutAt = group.items.reduce<number | null>((latest, item) => {
+                    if (!item.checkedOutAt) return latest;
+                    const timestamp = new Date(item.checkedOutAt).getTime();
+                    if (Number.isNaN(timestamp)) return latest;
+                    return latest === null || timestamp > latest ? timestamp : latest;
+                  }, null);
+                  const time = latestCheckedOutAt
+                    ? format(new Date(latestCheckedOutAt), "HH:mm dd/MM")
                     : "-";
 
                   const checkedKey = `checked-${group.key}`;
@@ -5193,12 +5167,36 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
           </button>
         </div>
         {/* Equipment List */}
-        <div className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-lg font-semibold tracking-tight">Inventory</h2>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold tracking-tight">Inventory</h2>
+                    <p className="text-xs text-muted-foreground">
+                      {inventoryFiltered.length} of {inventorySource.length} items shown
+                    </p>
+                  </div>
+                  {canManageEquipment && selectedIds.length > 0 && (
+                    <Badge variant="outline" className="w-fit text-xs">
+                      {selectedIds.length} selected
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_auto] lg:items-center">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_180px_180px]">
+                    {canManageEquipment && (
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          className="pl-9"
+                          placeholder="Search equipment ID, name, category..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                      </div>
+                    )}
                   <Select value={inventoryColorFilter} onValueChange={setInventoryColorFilter}>
-                    <SelectTrigger className="h-8 w-full sm:w-[180px] text-xs overflow-hidden">
+                    <SelectTrigger className="w-full text-xs overflow-hidden">
                       <SelectValue placeholder="Filter by system" />
                     </SelectTrigger>
                     <SelectContent>
@@ -5213,7 +5211,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </SelectContent>
                   </Select>
                   <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
-                    <SelectTrigger className="h-8 w-full sm:w-[180px] text-xs overflow-hidden">
+                    <SelectTrigger className="w-full text-xs overflow-hidden">
                       <SelectValue placeholder="Color bags" />
                     </SelectTrigger>
                     <SelectContent>
@@ -5225,12 +5223,40 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       ))}
                     </SelectContent>
                   </Select>
+                  </div>
+                  <div className="flex flex-wrap gap-2 lg:justify-end">
                   {canManageEquipment && (
                     <>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-xs"
+                        className="h-9 text-xs"
+                        onClick={() => selectAllFiltered(inventoryFiltered.map((item) => item.id))}
+                        disabled={inventoryFiltered.length === 0}
+                      >
+                        Select All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-xs"
+                        onClick={clearSelection}
+                        disabled={selectedIds.length === 0}
+                      >
+                        Clear
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-9 text-xs"
+                        onClick={() => setIsBulkEditOpen(true)}
+                        disabled={selectedIds.length === 0}
+                      >
+                        Bulk Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 text-xs"
                         onClick={() => setIsDueDatesOpen(true)}
                       >
                         Due Dates
@@ -5238,13 +5264,14 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-8 text-xs"
+                        className="h-9 text-xs"
                         onClick={handleExportCsv}
                       >
                         Export CSV
                       </Button>
                     </>
                   )}
+                  </div>
                 </div>
             </div>
 
