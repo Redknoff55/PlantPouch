@@ -246,7 +246,18 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Failed to save staged system');
+      if (!res.ok) {
+        let message = 'Failed to save staged system';
+        try {
+          const body = await res.json();
+          if (body?.error) {
+            message = body.error;
+          }
+        } catch {
+          // Keep the default message when the response is not JSON.
+        }
+        throw new Error(message);
+      }
       return res.json();
     },
     clear: async (systemColor: string): Promise<void> => {

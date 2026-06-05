@@ -2941,6 +2941,7 @@ function StageSystemModal({
 }) {
   const [systemColor, setSystemColor] = useState("");
   const [stagingLocation, setStagingLocation] = useState("");
+  const [customStagingLocation, setCustomStagingLocation] = useState("");
   const [stagedBy, setStagedBy] = useState(() =>
     typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
   );
@@ -2954,6 +2955,7 @@ function StageSystemModal({
     if (!isOpen) return;
     setSystemColor(initialSystemColor ?? "");
     setStagingLocation("");
+    setCustomStagingLocation("");
     setValveNumber("");
     setNotes("");
     setMissingSummary("");
@@ -2969,9 +2971,14 @@ function StageSystemModal({
   if (!isOpen) return null;
 
   const selectedSystem = systems.find((system) => system.color === systemColor);
+  const cleanedLocationOptions = Array.from(
+    new Set(locationOptions.map((location) => location.trim()).filter(Boolean))
+  );
+  const selectedStagingLocation =
+    stagingLocation === "__custom__" ? customStagingLocation.trim() : stagingLocation.trim();
 
   const handleSubmit = async () => {
-    if (!systemColor || !stagingLocation.trim() || !stagedBy.trim()) {
+    if (!systemColor || !selectedStagingLocation || !stagedBy.trim()) {
       toast.error("System, staging location, and tech name are required.");
       return;
     }
@@ -2986,7 +2993,7 @@ function StageSystemModal({
 
       await onStage({
         systemColor,
-        stagingLocation: stagingLocation.trim(),
+        stagingLocation: selectedStagingLocation,
         stagedBy: stagedBy.trim(),
         valveNumber: valveNumber.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -3049,17 +3056,26 @@ function StageSystemModal({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Staged At *</Label>
-              <Input
-                value={stagingLocation}
-                onChange={(event) => setStagingLocation(event.target.value)}
-                placeholder="e.g. Unit 2 - Containment C-Van"
-                list="stage-location-options"
-              />
-              <datalist id="stage-location-options">
-                {locationOptions.map((location) => (
-                  <option key={location} value={location} />
-                ))}
-              </datalist>
+              <Select value={stagingLocation} onValueChange={setStagingLocation}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a staging location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {cleanedLocationOptions.map((location) => (
+                    <SelectItem key={location} value={location}>
+                      {location}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="__custom__">Custom location...</SelectItem>
+                </SelectContent>
+              </Select>
+              {stagingLocation === "__custom__" && (
+                <Input
+                  value={customStagingLocation}
+                  onChange={(event) => setCustomStagingLocation(event.target.value)}
+                  placeholder="Enter custom staging location"
+                />
+              )}
             </div>
             <div className="space-y-2">
               <Label>Staged By *</Label>
