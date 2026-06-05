@@ -167,7 +167,9 @@ export default function Landing() {
 
         <button
           className="mt-8 w-full max-w-md rounded-2xl bg-primary text-primary-foreground py-10 text-2xl font-bold shadow-lg shadow-primary/30 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center gap-3"
-          onClick={() => setLocation("/tech")}
+          onClick={() => {
+            window.location.href = "/tech";
+          }}
         >
           <ShieldCheck className="w-8 h-8" />
           CHECK IN / OUT
@@ -176,7 +178,9 @@ export default function Landing() {
         {activeOutage && (
           <button
             className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
-            onClick={() => setLocation("/outage")}
+            onClick={() => {
+              window.location.href = "/outage";
+            }}
           >
             <ClipboardList className="w-5 h-5 text-primary" />
             {activeOutage.name.toUpperCase()} BOARD
@@ -195,7 +199,7 @@ export default function Landing() {
         onClose={() => setIsAdminModalOpen(false)}
         onSuccess={() => {
           setIsAdminModalOpen(false);
-          setLocation("/admin");
+          window.location.href = "/admin";
         }}
       />
     </div>
