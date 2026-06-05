@@ -770,6 +770,7 @@ export async function registerRoutes(
             workOrder: null,
             checkedOutBy: null,
             checkedOutAt: null,
+            location: validated.stagingLocation,
             notes: stageDetails,
           })
         )

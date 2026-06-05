@@ -181,6 +181,67 @@ const compareEquipmentIds = (a: Equipment, b: Equipment) =>
 
 const sortEquipmentById = (items: Equipment[]) => [...items].sort(compareEquipmentIds);
 
+const outagePresets = [
+  {
+    unit: "Unit 1",
+    name: "Unit 1 Outage",
+    locations: [
+      "Unit 1 - Containment C-Van",
+      "Unit 1 - AUX Building",
+      "Unit 1 - Turbine Building",
+      "Shop",
+      "In Progress",
+      "Needs Attention",
+      "Sent for Repairs",
+      "Waiting on Repairs",
+    ],
+  },
+  {
+    unit: "Unit 2",
+    name: "Unit 2 Outage",
+    locations: [
+      "Unit 2 - Containment C-Van",
+      "Unit 2 - AUX Building",
+      "Unit 2 - Turbine Building",
+      "Shop",
+      "In Progress",
+      "Needs Attention",
+      "Sent for Repairs",
+      "Waiting on Repairs",
+    ],
+  },
+  {
+    unit: "Unit 3",
+    name: "Unit 3 Outage",
+    locations: [
+      "Unit 3 - Containment C-Van",
+      "Unit 3 - AUX Building",
+      "Unit 3 - Turbine Building",
+      "Shop",
+      "In Progress",
+      "Needs Attention",
+      "Sent for Repairs",
+      "Waiting on Repairs",
+    ],
+  },
+];
+
+type ActiveOutage = {
+  name: string;
+  unit: string;
+  locations: string[];
+};
+
+const loadActiveOutage = (): ActiveOutage | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("plantpouch-active-outage");
+    return raw ? (JSON.parse(raw) as ActiveOutage) : null;
+  } catch {
+    return null;
+  }
+};
+
 // --- Components ---
 
 function StatusBadge({ status }: { status: string }) {
@@ -2868,6 +2929,7 @@ function StageSystemModal({
   isOpen,
   onClose,
   systems,
+  locationOptions,
   initialSystemColor,
   onStage,
 }: {
@@ -2878,6 +2940,7 @@ function StageSystemModal({
     summary: string;
     missingLabels: string[];
   }>;
+  locationOptions: string[];
   initialSystemColor?: string | null;
   onStage: (params: {
     systemColor: string;
@@ -2999,7 +3062,17 @@ function StageSystemModal({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Staged At *</Label>
-              <Input value={stagingLocation} onChange={(event) => setStagingLocation(event.target.value)} placeholder="e.g. Scaffold at ED804" />
+              <Input
+                value={stagingLocation}
+                onChange={(event) => setStagingLocation(event.target.value)}
+                placeholder="e.g. Unit 2 - Containment C-Van"
+                list="stage-location-options"
+              />
+              <datalist id="stage-location-options">
+                {locationOptions.map((location) => (
+                  <option key={location} value={location} />
+                ))}
+              </datalist>
             </div>
             <div className="space-y-2">
               <Label>Staged By *</Label>
@@ -3808,6 +3881,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [locationFilter, setLocationFilter] = useState("Shop");
   const [boardNoteDrafts, setBoardNoteDrafts] = useState<Record<string, string>>({});
+  const [activeOutage, setActiveOutage] = useState<ActiveOutage | null>(() => loadActiveOutage());
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -3819,6 +3893,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   });
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
+  const activeOutageLocations = activeOutage?.locations ?? [];
   
   const stats = {
     total: equipment.length,
@@ -3832,6 +3907,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       "Sent for Repairs",
       "Waiting on Repairs",
       "Repairs",
+      ...activeOutageLocations,
       ...equipment.map((item) => item.location || "Shop"),
       ...customLocations,
     ])
@@ -4100,6 +4176,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, [customLocations]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (activeOutage) {
+      localStorage.setItem("plantpouch-active-outage", JSON.stringify(activeOutage));
+    } else {
+      localStorage.removeItem("plantpouch-active-outage");
+    }
+  }, [activeOutage]);
+
+  useEffect(() => {
     setBoardNoteDrafts((prev) => {
       const next = { ...prev };
       outageLocationNotes.forEach((entry) => {
@@ -4228,6 +4313,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     }
   };
 
+  const handleSetOutagePreset = (unit: string) => {
+    const preset = outagePresets.find((entry) => entry.unit === unit);
+    if (!preset) return;
+    setActiveOutage(preset);
+    setCustomLocations((prev) => {
+      const next = new Set(prev);
+      preset.locations.forEach((location) => {
+        if (!["Shop", "In Progress", "Needs Attention", "Sent for Repairs", "Waiting on Repairs"].includes(location)) {
+          next.add(location);
+        }
+      });
+      return Array.from(next);
+    });
+    toast.success(`${preset.name} mode active.`);
+  };
+
+  const handleClearOutageMode = () => {
+    setActiveOutage(null);
+    toast.success("Outage mode cleared. Staged systems and notes were left intact.");
+  };
+
   const handleSaveBoardNote = async (location: string) => {
     try {
       const nextNote = boardNoteDrafts[location]?.trim() || "";
@@ -4337,7 +4443,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const outageLocationNoteMap = new Map(
     outageLocationNotes.map((entry) => [entry.location, entry])
   );
-  const outageBoardDefaultLocations = [
+  const outageBoardDefaultLocations = activeOutage?.locations ?? [
     "Shop",
     "AUX Building",
     "Containment C-Van",
@@ -4863,7 +4969,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Outage Board</h2>
               <p className="text-xs text-muted-foreground">
-                Whiteboard view for staged systems, active work, location notes, and repair needs.
+                {activeOutage
+                  ? `${activeOutage.name} - whiteboard view for staged systems, active work, location notes, and repair needs.`
+                  : "Choose a unit outage preset to load outage locations and start staging systems."}
               </p>
             </div>
             {canManageEquipment && (
@@ -4879,6 +4987,38 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 Stage System
               </Button>
             )}
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">
+                  {activeOutage ? activeOutage.name : "No active outage selected"}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {activeOutage
+                    ? `${activeOutage.locations.length} outage board locations loaded`
+                    : "Start with a preset, then stage/move color systems onto the board."}
+                </div>
+              </div>
+              {activeOutage && (
+                <Button variant="outline" size="sm" onClick={handleClearOutageMode}>
+                  Clear Outage Mode
+                </Button>
+              )}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {outagePresets.map((preset) => (
+                <Button
+                  key={preset.unit}
+                  variant={activeOutage?.unit === preset.unit ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleSetOutagePreset(preset.unit)}
+                >
+                  {preset.name}
+                </Button>
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
@@ -4970,14 +5110,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                                 </Button>
                               )}
                               {card.action === "clear" && canManageEquipment && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-[10px]"
-                                  onClick={() => handleClearStaging(card.color)}
-                                >
-                                  Clear
-                                </Button>
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-[10px]"
+                                    onClick={() => {
+                                      setStageInitialColor(card.color);
+                                      setIsStageOpen(true);
+                                    }}
+                                  >
+                                    Move
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-[10px]"
+                                    onClick={() => handleClearStaging(card.color)}
+                                  >
+                                    Clear
+                                  </Button>
+                                </>
                               )}
                               <Button
                                 variant="ghost"
@@ -5718,6 +5871,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               setStageInitialColor(null);
             }}
             systems={stageableSystems}
+            locationOptions={locationOptions}
             initialSystemColor={stageInitialColor}
             onStage={handleStageSystem}
           />
