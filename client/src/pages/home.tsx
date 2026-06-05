@@ -3055,10 +3055,10 @@ function StageSystemModal({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Staged At *</Label>
+              <Label>Outage Location *</Label>
               <Select value={stagingLocation} onValueChange={setStagingLocation}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose a staging location..." />
+                  <SelectValue placeholder="Choose an outage location..." />
                 </SelectTrigger>
                 <SelectContent>
                   {cleanedLocationOptions.map((location) => (
@@ -3917,6 +3917,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       ...customLocations,
     ])
   );
+  const stageLocationOptions = activeOutageLocations.length > 0
+    ? activeOutageLocations
+    : locationOptions;
   const systemColorOptions = Array.from(
     new Set(
       equipment
@@ -5897,7 +5900,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               setStageInitialColor(null);
             }}
             systems={stageableSystems}
-            locationOptions={locationOptions}
+            locationOptions={stageLocationOptions}
             initialSystemColor={stageInitialColor}
             onStage={handleStageSystem}
           />
