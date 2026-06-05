@@ -9,6 +9,8 @@ import type {
   InsertStagedSystem,
   OutageLocationNote,
   InsertOutageLocationNote,
+  ActiveOutage,
+  InsertActiveOutage,
 } from "@shared/schema";
 import type { BrandingConfig } from "@shared/branding";
 
@@ -263,6 +265,26 @@ export const api = {
   },
 
   outageBoard: {
+    getActive: async (): Promise<ActiveOutage | null> => {
+      const res = await fetch(`${API_BASE}/outage-board/active`);
+      if (!res.ok) throw new Error('Failed to fetch active outage');
+      return res.json();
+    },
+    saveActive: async (data: InsertActiveOutage): Promise<ActiveOutage> => {
+      const res = await fetch(`${API_BASE}/outage-board/active`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error('Failed to save active outage');
+      return res.json();
+    },
+    clearActive: async (): Promise<void> => {
+      const res = await fetch(`${API_BASE}/outage-board/active`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to clear active outage');
+    },
     getLocationNotes: async (): Promise<OutageLocationNote[]> => {
       const res = await fetch(`${API_BASE}/outage-board/location-notes`);
       if (!res.ok) throw new Error('Failed to fetch outage board notes');

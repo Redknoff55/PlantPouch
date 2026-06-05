@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ClipboardList, Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
+import { useActiveOutage } from "@/lib/hooks";
 import {
   applyBrandingToDocument,
   loadBrandingFromStorage,
@@ -114,6 +115,7 @@ function AdminAccessModal({
 
 export default function Landing() {
   const [, setLocation] = useLocation();
+  const { data: activeOutage = null } = useActiveOutage();
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
 
@@ -171,13 +173,15 @@ export default function Landing() {
           CHECK IN / OUT
         </button>
 
-        <button
-          className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
-          onClick={() => setLocation("/outage")}
-        >
-          <ClipboardList className="w-5 h-5 text-primary" />
-          OUTAGE BOARD
-        </button>
+        {activeOutage && (
+          <button
+            className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
+            onClick={() => setLocation("/outage")}
+          >
+            <ClipboardList className="w-5 h-5 text-primary" />
+            {activeOutage.name.toUpperCase()} BOARD
+          </button>
+        )}
       </div>
 
       <div className="pb-6 flex items-center justify-center">

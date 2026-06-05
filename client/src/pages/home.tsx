@@ -22,6 +22,9 @@ import {
   useClearStagedSystem,
   useOutageLocationNotes,
   useSaveOutageLocationNote,
+  useActiveOutage,
+  useSaveActiveOutage,
+  useClearActiveOutage,
 } from "@/lib/hooks";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -225,22 +228,6 @@ const outagePresets = [
     ],
   },
 ];
-
-type ActiveOutage = {
-  name: string;
-  unit: string;
-  locations: string[];
-};
-
-const loadActiveOutage = (): ActiveOutage | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("plantpouch-active-outage");
-    return raw ? (JSON.parse(raw) as ActiveOutage) : null;
-  } catch {
-    return null;
-  }
-};
 
 // --- Components ---
 
@@ -3833,6 +3820,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const { data: systemConfigs = [] } = useSystemConfigs();
   const { data: stagedSystems = [] } = useStagedSystems();
   const { data: outageLocationNotes = [] } = useOutageLocationNotes();
+  const { data: activeOutage = null } = useActiveOutage();
   const adminEnabled = mode === "admin" || mode === "outage";
   const isOutageMode = mode === "outage";
   const updateEquipment = useUpdateEquipment();
@@ -3840,6 +3828,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const saveStagedSystem = useSaveStagedSystem();
   const clearStagedSystem = useClearStagedSystem();
   const saveOutageLocationNote = useSaveOutageLocationNote();
+  const saveActiveOutage = useSaveActiveOutage();
+  const clearActiveOutage = useClearActiveOutage();
   const queryClient = useQueryClient();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
@@ -3881,7 +3871,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [locationFilter, setLocationFilter] = useState("Shop");
   const [boardNoteDrafts, setBoardNoteDrafts] = useState<Record<string, string>>({});
-  const [activeOutage, setActiveOutage] = useState<ActiveOutage | null>(() => loadActiveOutage());
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -4176,15 +4165,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, [customLocations]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (activeOutage) {
-      localStorage.setItem("plantpouch-active-outage", JSON.stringify(activeOutage));
-    } else {
-      localStorage.removeItem("plantpouch-active-outage");
-    }
-  }, [activeOutage]);
-
-  useEffect(() => {
     setBoardNoteDrafts((prev) => {
       const next = { ...prev };
       outageLocationNotes.forEach((entry) => {
@@ -4313,25 +4293,33 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     }
   };
 
-  const handleSetOutagePreset = (unit: string) => {
+  const handleSetOutagePreset = async (unit: string) => {
     const preset = outagePresets.find((entry) => entry.unit === unit);
     if (!preset) return;
-    setActiveOutage(preset);
-    setCustomLocations((prev) => {
-      const next = new Set(prev);
-      preset.locations.forEach((location) => {
-        if (!["Shop", "In Progress", "Needs Attention", "Sent for Repairs", "Waiting on Repairs"].includes(location)) {
-          next.add(location);
-        }
+    try {
+      await saveActiveOutage.mutateAsync(preset);
+      setCustomLocations((prev) => {
+        const next = new Set(prev);
+        preset.locations.forEach((location) => {
+          if (!["Shop", "In Progress", "Needs Attention", "Sent for Repairs", "Waiting on Repairs"].includes(location)) {
+            next.add(location);
+          }
+        });
+        return Array.from(next);
       });
-      return Array.from(next);
-    });
-    toast.success(`${preset.name} mode active.`);
+      toast.success(`${preset.name} mode active.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to set outage mode.");
+    }
   };
 
-  const handleClearOutageMode = () => {
-    setActiveOutage(null);
-    toast.success("Outage mode cleared. Staged systems and notes were left intact.");
+  const handleClearOutageMode = async () => {
+    try {
+      await clearActiveOutage.mutateAsync();
+      toast.success("Outage mode cleared. Staged systems and notes were left intact.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clear outage mode.");
+    }
   };
 
   const handleSaveBoardNote = async (location: string) => {
@@ -4963,6 +4951,52 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         </div>
         )}
 
+        {!isOutageMode && canManageEquipment && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">Outage Mode</h2>
+                <p className="text-xs text-muted-foreground">
+                  Set the active outage board techs see from the landing page.
+                </p>
+              </div>
+              {activeOutage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearOutageMode}
+                  disabled={clearActiveOutage.isPending}
+                >
+                  Clear Outage Mode
+                </Button>
+              )}
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <div className="text-sm font-semibold">
+                {activeOutage ? activeOutage.name : "No active outage selected"}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {activeOutage
+                  ? `${activeOutage.locations.length} board locations active`
+                  : "Choose a preset when an outage starts. This does not move systems by itself."}
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {outagePresets.map((preset) => (
+                <Button
+                  key={preset.unit}
+                  variant={activeOutage?.unit === preset.unit ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleSetOutagePreset(preset.unit)}
+                  disabled={saveActiveOutage.isPending}
+                >
+                  {preset.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {isOutageMode && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -4971,10 +5005,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               <p className="text-xs text-muted-foreground">
                 {activeOutage
                   ? `${activeOutage.name} - whiteboard view for staged systems, active work, location notes, and repair needs.`
-                  : "Choose a unit outage preset to load outage locations and start staging systems."}
+                  : "No active outage is configured. Ask an admin to set outage mode."}
               </p>
             </div>
-            {canManageEquipment && (
+            {activeOutage && canManageEquipment && (
               <Button
                 variant="outline"
                 size="sm"
@@ -4989,38 +5023,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             )}
           </div>
 
-          <div className="rounded-lg border border-border/60 bg-muted/10 p-3 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold">
-                  {activeOutage ? activeOutage.name : "No active outage selected"}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {activeOutage
-                    ? `${activeOutage.locations.length} outage board locations loaded`
-                    : "Start with a preset, then stage/move color systems onto the board."}
-                </div>
-              </div>
-              {activeOutage && (
-                <Button variant="outline" size="sm" onClick={handleClearOutageMode}>
-                  Clear Outage Mode
-                </Button>
-              )}
+          {!activeOutage && (
+            <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 p-6 text-center text-sm text-muted-foreground">
+              Outage mode is not active. The board will show the selected unit and outage locations after an admin enables it.
             </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {outagePresets.map((preset) => (
-                <Button
-                  key={preset.unit}
-                  variant={activeOutage?.unit === preset.unit ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => handleSetOutagePreset(preset.unit)}
-                >
-                  {preset.name}
-                </Button>
-              ))}
-            </div>
-          </div>
+          )}
 
+          {activeOutage && (
           <div className="grid gap-3 lg:grid-cols-2">
             {visibleOutageBoardLocations.map((location) => {
               const cards = outageCardsByLocation[location] ?? [];
@@ -5151,6 +5160,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               );
             })}
           </div>
+          )}
         </div>
         )}
 

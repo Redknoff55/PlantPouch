@@ -81,6 +81,16 @@ export const outageLocationNotes = pgTable("outage_location_notes", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const activeOutage = pgTable("active_outage", {
+  id: varchar("id").primaryKey().default("active"),
+  name: text("name").notNull(),
+  unit: text("unit").notNull(),
+  locations: jsonb("locations").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const equipmentHistory = pgTable("equipment_history", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: 'cascade' }),
@@ -129,6 +139,16 @@ export const insertOutageLocationNoteSchema = createInsertSchema(outageLocationN
   note: z.string().default(""),
 });
 
+export const insertActiveOutageSchema = createInsertSchema(activeOutage).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1),
+  unit: z.string().min(1),
+  locations: z.array(z.string().min(1)).default([]),
+});
+
 export type Equipment = typeof equipment.$inferSelect;
 export type InsertEquipment = z.infer<typeof insertEquipmentSchema>;
 export type EquipmentHistory = typeof equipmentHistory.$inferSelect;
@@ -143,3 +163,5 @@ export type StagedSystem = typeof stagedSystems.$inferSelect;
 export type InsertStagedSystem = z.infer<typeof insertStagedSystemSchema>;
 export type OutageLocationNote = typeof outageLocationNotes.$inferSelect;
 export type InsertOutageLocationNote = z.infer<typeof insertOutageLocationNoteSchema>;
+export type ActiveOutage = typeof activeOutage.$inferSelect;
+export type InsertActiveOutage = z.infer<typeof insertActiveOutageSchema>;

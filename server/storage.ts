@@ -11,12 +11,15 @@ import {
   type InsertStagedSystem,
   type OutageLocationNote,
   type InsertOutageLocationNote,
+  type ActiveOutage,
+  type InsertActiveOutage,
   equipment as equipmentTable,
   equipmentHistory as equipmentHistoryTable,
   systems as systemsTable,
   systemConfigs as systemConfigsTable,
   stagedSystems as stagedSystemsTable,
   outageLocationNotes as outageLocationNotesTable,
+  activeOutage as activeOutageTable,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -59,6 +62,11 @@ export interface IStorage {
   getAllOutageLocationNotes(): Promise<OutageLocationNote[]>;
   getOutageLocationNote(location: string): Promise<OutageLocationNote | undefined>;
   upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote>;
+
+  // Active outage mode
+  getActiveOutage(): Promise<ActiveOutage | undefined>;
+  setActiveOutage(outage: InsertActiveOutage): Promise<ActiveOutage>;
+  clearActiveOutage(): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -247,6 +255,40 @@ export class DatabaseStorage implements IStorage {
 
     const result = await db.insert(outageLocationNotesTable).values(note).returning();
     return result[0];
+  }
+
+  async getActiveOutage(): Promise<ActiveOutage | undefined> {
+    const result = await db.select().from(activeOutageTable).limit(1);
+    return result[0];
+  }
+
+  async setActiveOutage(outage: InsertActiveOutage): Promise<ActiveOutage> {
+    const existing = await this.getActiveOutage();
+    if (existing) {
+      const result = await db
+        .update(activeOutageTable)
+        .set({
+          ...outage,
+          updatedAt: new Date(),
+        })
+        .where(eq(activeOutageTable.id, existing.id))
+        .returning();
+      return result[0];
+    }
+
+    const result = await db
+      .insert(activeOutageTable)
+      .values({
+        id: "active",
+        ...outage,
+      })
+      .returning();
+    return result[0];
+  }
+
+  async clearActiveOutage(): Promise<boolean> {
+    const result = await db.delete(activeOutageTable).returning();
+    return result.length > 0;
   }
 }
 

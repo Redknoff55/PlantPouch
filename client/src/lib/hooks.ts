@@ -6,6 +6,7 @@ import type {
   InsertSystemConfig,
   InsertStagedSystem,
   InsertOutageLocationNote,
+  InsertActiveOutage,
 } from "@shared/schema";
 
 export function useEquipment() {
@@ -210,6 +211,33 @@ export function useSaveOutageLocationNote() {
       api.outageBoard.saveLocationNote(location, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outage-location-notes'] });
+    },
+  });
+}
+
+export function useActiveOutage() {
+  return useQuery({
+    queryKey: ['active-outage'],
+    queryFn: api.outageBoard.getActive,
+  });
+}
+
+export function useSaveActiveOutage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InsertActiveOutage) => api.outageBoard.saveActive(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-outage'] });
+    },
+  });
+}
+
+export function useClearActiveOutage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.outageBoard.clearActive,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-outage'] });
     },
   });
 }

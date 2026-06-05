@@ -7,6 +7,7 @@ import {
   insertSystemConfigSchema,
   insertStagedSystemSchema,
   insertOutageLocationNoteSchema,
+  insertActiveOutageSchema,
   type InsertEquipment,
 } from "@shared/schema";
 import { brandingSchema } from "@shared/branding";
@@ -844,6 +845,40 @@ export async function registerRoutes(
       }
       console.error("Error saving outage board note:", error);
       res.status(500).json({ error: "Failed to save outage board note" });
+    }
+  });
+
+  app.get("/api/outage-board/active", async (_req, res) => {
+    try {
+      const activeOutage = await storage.getActiveOutage();
+      res.json(activeOutage ?? null);
+    } catch (error) {
+      console.error("Error fetching active outage:", error);
+      res.status(500).json({ error: "Failed to fetch active outage" });
+    }
+  });
+
+  app.put("/api/outage-board/active", async (req, res) => {
+    try {
+      const validated = insertActiveOutageSchema.parse(req.body);
+      const activeOutage = await storage.setActiveOutage(validated);
+      res.json(activeOutage);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error saving active outage:", error);
+      res.status(500).json({ error: "Failed to save active outage" });
+    }
+  });
+
+  app.delete("/api/outage-board/active", async (_req, res) => {
+    try {
+      await storage.clearActiveOutage();
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error clearing active outage:", error);
+      res.status(500).json({ error: "Failed to clear active outage" });
     }
   });
 
