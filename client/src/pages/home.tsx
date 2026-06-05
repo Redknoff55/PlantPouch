@@ -5182,8 +5182,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                     </Badge>
                   )}
                 </div>
-                <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_auto] lg:items-center">
-                  <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_180px_180px]">
+                <div className="flex flex-col gap-3">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px]">
                     {canManageEquipment && (
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -5195,42 +5195,42 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                         />
                       </div>
                     )}
-                  <Select value={inventoryColorFilter} onValueChange={setInventoryColorFilter}>
-                    <SelectTrigger className="w-full text-xs overflow-hidden">
-                      <SelectValue placeholder="Filter by system" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="All">All Systems</SelectItem>
-                      <SelectItem value="Needs Cal">Needs Cal</SelectItem>
-                      {systemColorOptions.map((color) => (
-                        <SelectItem key={color} value={color}>
-                          {color} System
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="Unassigned">Unassigned</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
-                    <SelectTrigger className="w-full text-xs overflow-hidden">
-                      <SelectValue placeholder="Color bags" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No bag selected</SelectItem>
-                      {bagColorOptions.map((color) => (
-                        <SelectItem key={color} value={color}>
-                          {color} Bag
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    <Select value={inventoryColorFilter} onValueChange={setInventoryColorFilter}>
+                      <SelectTrigger className="w-full text-xs overflow-hidden">
+                        <SelectValue placeholder="Filter by system" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Systems</SelectItem>
+                        <SelectItem value="Needs Cal">Needs Cal</SelectItem>
+                        {systemColorOptions.map((color) => (
+                          <SelectItem key={color} value={color}>
+                            {color} System
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="Unassigned">Unassigned</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
+                      <SelectTrigger className="w-full text-xs overflow-hidden">
+                        <SelectValue placeholder="Color bags" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No bag selected</SelectItem>
+                        {bagColorOptions.map((color) => (
+                          <SelectItem key={color} value={color}>
+                            {color} Bag
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <div className="flex flex-wrap gap-2">
                   {canManageEquipment && (
                     <>
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9 text-xs"
+                        className="h-9 flex-1 text-xs sm:flex-none"
                         onClick={() => selectAllFiltered(inventoryFiltered.map((item) => item.id))}
                         disabled={inventoryFiltered.length === 0}
                       >
@@ -5239,7 +5239,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9 text-xs"
+                        className="h-9 flex-1 text-xs sm:flex-none"
                         onClick={clearSelection}
                         disabled={selectedIds.length === 0}
                       >
@@ -5247,7 +5247,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       </Button>
                       <Button
                         size="sm"
-                        className="h-9 text-xs"
+                        className="h-9 flex-1 text-xs sm:flex-none"
                         onClick={() => setIsBulkEditOpen(true)}
                         disabled={selectedIds.length === 0}
                       >
@@ -5256,7 +5256,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9 text-xs"
+                        className="h-9 flex-1 text-xs sm:flex-none"
                         onClick={() => setIsDueDatesOpen(true)}
                       >
                         Due Dates
@@ -5264,7 +5264,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" }) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9 text-xs"
+                        className="h-9 flex-1 text-xs sm:flex-none"
                         onClick={handleExportCsv}
                       >
                         Export CSV
