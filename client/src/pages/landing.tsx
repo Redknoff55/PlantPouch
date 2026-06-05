@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, ShieldCheck } from "lucide-react";
+import { ClipboardList, Lock, ShieldCheck } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
 import {
   applyBrandingToDocument,
@@ -169,6 +169,14 @@ export default function Landing() {
         >
           <ShieldCheck className="w-8 h-8" />
           CHECK IN / OUT
+        </button>
+
+        <button
+          className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
+          onClick={() => setLocation("/outage")}
+        >
+          <ClipboardList className="w-5 h-5 text-primary" />
+          OUTAGE BOARD
         </button>
       </div>
 

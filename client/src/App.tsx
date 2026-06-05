@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import Landing from "@/pages/landing";
 import AdminPage from "@/pages/admin";
 import Tech from "@/pages/tech";
+import Outage from "@/pages/outage";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -12,6 +13,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Landing} />
       <Route path="/tech" component={Tech} />
+      <Route path="/outage" component={Outage} />
       <Route path="/admin" component={AdminPage} />
       <Route component={NotFound} />
     </Switch>
