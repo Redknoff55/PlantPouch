@@ -3887,6 +3887,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [locationFilter, setLocationFilter] = useState("Shop");
   const [boardNoteDrafts, setBoardNoteDrafts] = useState<Record<string, string>>({});
+  const [outageMoveColor, setOutageMoveColor] = useState("");
+  const [outageMoveLocation, setOutageMoveLocation] = useState("");
+  const [outageMoveBy, setOutageMoveBy] = useState(() =>
+    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
+  );
+  const [outageMoveNotes, setOutageMoveNotes] = useState("");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -4184,6 +4190,21 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, [customLocations]);
 
   useEffect(() => {
+    if (!activeOutageLocations.length) {
+      setOutageMoveLocation("");
+      return;
+    }
+    setOutageMoveLocation((current) =>
+      activeOutageLocations.includes(current) ? current : activeOutageLocations[0]
+    );
+  }, [activeOutage?.unit]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("plantpouch-tech-name", outageMoveBy);
+  }, [outageMoveBy]);
+
+  useEffect(() => {
     setBoardNoteDrafts((prev) => {
       const next = { ...prev };
       outageLocationNotes.forEach((entry) => {
@@ -4300,6 +4321,35 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       setIsStageOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to stage system.");
+    }
+  };
+
+  const handleAdminOutageMove = async () => {
+    const movedBy = outageMoveBy.trim();
+    if (!activeOutage) {
+      toast.error("Set outage mode before moving systems on the outage board.");
+      return;
+    }
+    if (!outageMoveColor || !outageMoveLocation || !movedBy) {
+      toast.error("Choose a system, outage location, and moved by name.");
+      return;
+    }
+    try {
+      await saveStagedSystem.mutateAsync({
+        systemColor: outageMoveColor,
+        data: {
+          systemColor: outageMoveColor,
+          stagingLocation: outageMoveLocation,
+          stagedBy: movedBy,
+          notes: outageMoveNotes.trim() || undefined,
+          missingItems: [],
+          sourceWorkOrder: null,
+        },
+      });
+      setOutageMoveNotes("");
+      toast.success(`${outageMoveColor} moved to ${outageMoveLocation}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to move system on outage board.");
     }
   };
 
@@ -5013,6 +5063,72 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 </Button>
               ))}
             </div>
+            {activeOutage && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+                <div>
+                  <div className="text-sm font-semibold">Outage Movement</div>
+                  <p className="text-xs text-muted-foreground">
+                    Use this for outage board moves. Inventory Bulk Edit only changes raw item location and does not stage a system on the board.
+                  </p>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+                  <div className="space-y-2">
+                    <Label>System</Label>
+                    <Select value={outageMoveColor} onValueChange={setOutageMoveColor}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose color..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stageableSystems.map((system) => (
+                          <SelectItem key={system.color} value={system.color}>
+                            {system.color} System
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Outage Location</Label>
+                    <Select value={outageMoveLocation} onValueChange={setOutageMoveLocation}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose location..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {stageLocationOptions.map((location) => (
+                          <SelectItem key={location} value={location}>
+                            {location}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Moved By</Label>
+                    <Input
+                      value={outageMoveBy}
+                      onChange={(event) => setOutageMoveBy(event.target.value)}
+                      placeholder="Tech name"
+                    />
+                  </div>
+                  <Button
+                    className="h-9"
+                    onClick={handleAdminOutageMove}
+                    disabled={saveStagedSystem.isPending || !outageMoveColor || !outageMoveLocation}
+                  >
+                    Move System
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label>Move Note</Label>
+                  <Textarea
+                    className="min-h-16 resize-none text-xs"
+                    value={outageMoveNotes}
+                    onChange={(event) => setOutageMoveNotes(event.target.value)}
+                    placeholder="Optional, e.g. Yellow encoder broken, bring replacement."
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
