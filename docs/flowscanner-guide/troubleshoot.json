@@ -1,0 +1,66 @@
+﻿{
+  "nodes": {
+    "start": {
+      "id": "start",
+      "question": "Does the Flowscanner power on and show a device ready state?",
+      "options": {
+        "yes": "connected",
+        "no": "power_issue"
+      }
+    },
+    "power_issue": {
+      "id": "power_issue",
+      "question": "Check power: batteries/charger and power LED. After fixing, did it power on?",
+      "options": {
+        "yes": "connected",
+        "no": "escalate"
+      },
+      "action": "Check power connections and replace batteries/charger"
+    },
+    "connected": {
+      "id": "connected",
+      "question": "Does the Flowscanner show live data when connected to the valve?",
+      "options": {
+        "yes": "interpret",
+        "no": "connection_issue"
+      }
+    },
+    "connection_issue": {
+      "id": "connection_issue",
+      "question": "Reseat cables and connectors, then retry. Still no data?",
+      "options": {
+        "yes": "escalate",
+        "no": "connected"
+      },
+      "action": "Inspect cable pins and connectors for damage"
+    },
+    "interpret": {
+      "id": "interpret",
+      "question": "Is the flow signature abnormal (spikes, flatline, noise)?",
+      "options": {
+        "yes": "check_valve",
+        "no": "done"
+      }
+    },
+    "check_valve": {
+      "id": "check_valve",
+      "question": "Perform valve mechanical checks and repeat test. Resolved?",
+      "options": {
+        "yes": "done",
+        "no": "escalate"
+      }
+    },
+    "escalate": {
+      "id": "escalate",
+      "question": "Create a maintenance ticket and attach the raw log and notes.",
+      "options": {},
+      "action": "Attach logs to PlantPouch and notify maintenance"
+    },
+    "done": {
+      "id": "done",
+      "question": "Issue resolved or data captured successfully.",
+      "options": {}
+    }
+  },
+  "startNode": "start"
+}
