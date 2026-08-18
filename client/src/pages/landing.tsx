@@ -97,12 +97,18 @@ function AdminAccessModal({
               />
             </div>
           )}
-          {error && <div className="text-sm text-destructive">{error}</div>}
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" type="button" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button className="flex-1" type="submit">
+            <div className="pb-6 flex items-center justify-center">
+              <Button variant="ghost" size="sm" onClick={() => setIsAdminModalOpen(tru
+      e)}>
+                Admin
+              </Button>
+            </div>
+
+            <div className="fixed left-4 bottom-6 z-50">
+              <Button className="rounded-full bg-rose-500 text-white px-4 py-2 shadow-lg" onClick={() => { window.location.href = "/help"; }}>
+                I need help
+              </Button>
+            </div>
               {storedPin ? "Unlock" : "Set PIN"}
             </Button>
           </div>
