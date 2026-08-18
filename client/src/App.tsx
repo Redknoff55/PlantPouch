@@ -6,7 +6,8 @@ import Landing from "@/pages/landing";
 import AdminPage from "@/pages/admin";
 import Tech from "@/pages/tech";
 import Outage from "@/pages/outage";
-import NotFound from "@/pages/not-found";\r\nimport Help from "@/pages/help";
+import NotFound from "@/pages/not-found";
+import Help from "@/pages/help";
 
 function Router() {
   return (
