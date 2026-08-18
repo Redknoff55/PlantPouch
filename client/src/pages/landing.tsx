@@ -192,6 +192,22 @@ export default function Landing() {
         </Button>
       </div>
 
+      {/* Help floating button: centered on mobile, left-fixed on desktop */}
+      <div>
+        <button
+          aria-label="I need help"
+          onClick={() => setLocation("/help")}
+          className="fixed bottom-6 left-1/2 transform -translate-x-1/2 sm:left-6 sm:translate-x-0 z-40 bg-primary text-primary-foreground rounded-full px-4 py-3 shadow-lg hover:brightness-105 active:scale-[0.98] transition-all flex items-center gap-2"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 5.636A9 9 0 1 0 5.636 18.364 9 9 0 0 1 18.364 5.636z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 16h.01" />
+          </svg>
+          <span className="font-medium">I need help</span>
+        </button>
+      </div>
+
       <AdminAccessModal
         isOpen={isAdminModalOpen}
         onClose={() => setIsAdminModalOpen(false)}
