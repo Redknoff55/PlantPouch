@@ -75,49 +75,35 @@ function AdminAccessModal({
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <Label>{storedPin ? "PIN" : "New PIN"}</Label>
-            <Input
-              type="password"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN"
-            />
-          </div>
-          {!storedPin && (
             <div className="space-y-2">
-              <Label>Confirm PIN</Label>
+              <Label>{storedPin ? "PIN" : "New PIN"}</Label>
               <Input
                 type="password"
                 inputMode="numeric"
-                value={confirmPin}
-                onChange={(e) => setConfirmPin(e.target.value)}
-                placeholder="Confirm PIN"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="Enter PIN"
               />
             </div>
-          )}
-            <div className="pb-6 flex items-center justify-center">
-              <Button variant="ghost" size="sm" onClick={() => setIsAdminModalOpen(tru
-      e)}>
-                Admin
-              </Button>
-            </div>
 
-            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 sm:left-4 sm:transform-none z-50">
-              <Button
-                className="rounded-full bg-rose-500 text-white px-5 py-3 text-base shadow-lg sm:px-4 sm:py-2 sm:text-sm"
-                onClick={() => {
-                  window.location.href = "/help";
-                }}
-                aria-label="I need help"
-              >
-                I need help
-              </Button>
-            </div>
+            {!storedPin && (
+              <div className="space-y-2">
+                <Label>Confirm PIN</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value)}
+                  placeholder="Confirm PIN"
+                />
+              </div>
+            )}
+
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+
+            <Button type="submit" className="w-full">
               {storedPin ? "Unlock" : "Set PIN"}
             </Button>
-          </div>
           </form>
         </CardContent>
       </Card>
