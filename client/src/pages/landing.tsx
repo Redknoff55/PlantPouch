@@ -104,8 +104,14 @@ function AdminAccessModal({
               </Button>
             </div>
 
-            <div className="fixed left-4 bottom-6 z-50">
-              <Button className="rounded-full bg-rose-500 text-white px-4 py-2 shadow-lg" onClick={() => { window.location.href = "/help"; }}>
+            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 sm:left-4 sm:transform-none z-50">
+              <Button
+                className="rounded-full bg-rose-500 text-white px-5 py-3 text-base shadow-lg sm:px-4 sm:py-2 sm:text-sm"
+                onClick={() => {
+                  window.location.href = "/help";
+                }}
+                aria-label="I need help"
+              >
                 I need help
               </Button>
             </div>
