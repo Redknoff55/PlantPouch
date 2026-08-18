@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+﻿import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { branding } from "@/config/branding";
 import { Button } from "@/components/ui/button";
@@ -205,3 +205,4 @@ export default function Landing() {
     </div>
   );
 }
+
