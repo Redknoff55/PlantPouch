@@ -11,12 +11,91 @@ import type {
   InsertOutageLocationNote,
   ActiveOutage,
   InsertActiveOutage,
+  Warehouse,
+  InsertWarehouse,
+  Toolbox,
+  InsertToolbox,
+  Pouch,
+  InsertPouch,
 } from "@shared/schema";
 import type { BrandingConfig } from "@shared/branding";
 
 const API_BASE = "/api";
 
 export const api = {
+  registry: {
+    get: async (): Promise<{ warehouses: Warehouse[]; toolboxes: Toolbox[]; pouches: Pouch[] }> => {
+      const res = await fetch(`${API_BASE}/registry`);
+      if (!res.ok) throw new Error("Failed to fetch platform registry");
+      return res.json();
+    },
+    createWarehouse: async (data: InsertWarehouse): Promise<Warehouse> => {
+      const res = await fetch(`${API_BASE}/warehouses`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create warehouse");
+      return res.json();
+    },
+    updateWarehouse: async (id: string, data: Partial<InsertWarehouse>): Promise<Warehouse> => {
+      const res = await fetch(`${API_BASE}/warehouses/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update warehouse");
+      return res.json();
+    },
+    deleteWarehouse: async (id: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/warehouses/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete warehouse");
+    },
+    createToolbox: async (data: InsertToolbox): Promise<Toolbox> => {
+      const res = await fetch(`${API_BASE}/toolboxes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create toolbox");
+      return res.json();
+    },
+    updateToolbox: async (id: string, data: Partial<InsertToolbox>): Promise<Toolbox> => {
+      const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update toolbox");
+      return res.json();
+    },
+    deleteToolbox: async (id: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete toolbox");
+    },
+    createPouch: async (data: InsertPouch): Promise<Pouch> => {
+      const res = await fetch(`${API_BASE}/pouches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create pouch");
+      return res.json();
+    },
+    updatePouch: async (id: string, data: Partial<InsertPouch>): Promise<Pouch> => {
+      const res = await fetch(`${API_BASE}/pouches/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update pouch");
+      return res.json();
+    },
+    deletePouch: async (id: string): Promise<void> => {
+      const res = await fetch(`${API_BASE}/pouches/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete pouch");
+    },
+  },
   branding: {
     get: async (): Promise<Partial<BrandingConfig>> => {
       const res = await fetch(`${API_BASE}/branding`);

@@ -8,6 +8,9 @@ import {
   insertStagedSystemSchema,
   insertOutageLocationNoteSchema,
   insertActiveOutageSchema,
+  insertWarehouseSchema,
+  insertToolboxSchema,
+  insertPouchSchema,
   type InsertEquipment,
 } from "@shared/schema";
 import { brandingSchema } from "@shared/branding";
@@ -65,6 +68,134 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  app.get("/api/registry", async (_req, res) => {
+    try {
+      const [warehouses, toolboxes, pouches] = await Promise.all([
+        storage.getAllWarehouses(),
+        storage.getAllToolboxes(),
+        storage.getAllPouches(),
+      ]);
+      res.json({ warehouses, toolboxes, pouches });
+    } catch (error) {
+      console.error("Error fetching platform registry:", error);
+      res.status(500).json({ error: "Failed to fetch platform registry" });
+    }
+  });
+
+  app.post("/api/warehouses", async (req, res) => {
+    try {
+      const warehouse = await storage.createWarehouse(insertWarehouseSchema.parse(req.body));
+      res.status(201).json(warehouse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error creating warehouse:", error);
+      res.status(500).json({ error: "Failed to create warehouse" });
+    }
+  });
+
+  app.patch("/api/warehouses/:id", async (req, res) => {
+    try {
+      const warehouse = await storage.updateWarehouse(req.params.id, insertWarehouseSchema.partial().parse(req.body));
+      if (!warehouse) return res.status(404).json({ error: "Warehouse not found" });
+      res.json(warehouse);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error updating warehouse:", error);
+      res.status(500).json({ error: "Failed to update warehouse" });
+    }
+  });
+
+  app.delete("/api/warehouses/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteWarehouse(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Warehouse not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting warehouse:", error);
+      res.status(500).json({ error: "Failed to delete warehouse" });
+    }
+  });
+
+  app.post("/api/toolboxes", async (req, res) => {
+    try {
+      const toolbox = await storage.createToolbox(insertToolboxSchema.parse(req.body));
+      res.status(201).json(toolbox);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error creating toolbox:", error);
+      res.status(500).json({ error: "Failed to create toolbox" });
+    }
+  });
+
+  app.patch("/api/toolboxes/:id", async (req, res) => {
+    try {
+      const toolbox = await storage.updateToolbox(req.params.id, insertToolboxSchema.partial().parse(req.body));
+      if (!toolbox) return res.status(404).json({ error: "Toolbox not found" });
+      res.json(toolbox);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error updating toolbox:", error);
+      res.status(500).json({ error: "Failed to update toolbox" });
+    }
+  });
+
+  app.delete("/api/toolboxes/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteToolbox(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Toolbox not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting toolbox:", error);
+      res.status(500).json({ error: "Failed to delete toolbox" });
+    }
+  });
+
+  app.post("/api/pouches", async (req, res) => {
+    try {
+      const pouch = await storage.createPouch(insertPouchSchema.parse(req.body));
+      res.status(201).json(pouch);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error creating pouch:", error);
+      res.status(500).json({ error: "Failed to create pouch" });
+    }
+  });
+
+  app.patch("/api/pouches/:id", async (req, res) => {
+    try {
+      const pouch = await storage.updatePouch(req.params.id, insertPouchSchema.partial().parse(req.body));
+      if (!pouch) return res.status(404).json({ error: "Pouch not found" });
+      res.json(pouch);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error updating pouch:", error);
+      res.status(500).json({ error: "Failed to update pouch" });
+    }
+  });
+
+  app.delete("/api/pouches/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deletePouch(req.params.id);
+      if (!deleted) return res.status(404).json({ error: "Pouch not found" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting pouch:", error);
+      res.status(500).json({ error: "Failed to delete pouch" });
+    }
+  });
 
   app.get("/api/branding", async (_req, res) => {
     try {

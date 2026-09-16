@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -41,6 +41,39 @@ export const systems = pgTable("systems", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   color: text("color").notNull(),
+});
+
+export const warehouses = pgTable("warehouses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  description: text("description"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const toolboxes = pgTable("toolboxes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  description: text("description"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const pouches = pgTable("pouches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  toolboxId: varchar("toolbox_id").notNull().references(() => toolboxes.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  moduleType: text("module_type").notNull().default("custom"),
+  description: text("description"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const systemConfigs = pgTable("system_configs", {
@@ -114,6 +147,39 @@ export const insertSystemSchema = createInsertSchema(systems).omit({
   id: true,
 });
 
+export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().trim().min(1),
+  slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  enabled: z.boolean().default(true),
+});
+
+export const insertToolboxSchema = createInsertSchema(toolboxes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  warehouseId: z.string().min(1),
+  name: z.string().trim().min(1),
+  slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  enabled: z.boolean().default(true),
+});
+
+export const insertPouchSchema = createInsertSchema(pouches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  toolboxId: z.string().min(1),
+  name: z.string().trim().min(1),
+  slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  moduleType: z.string().trim().min(1).default("custom"),
+  enabled: z.boolean().default(true),
+});
+
 export const insertSystemConfigSchema = createInsertSchema(systemConfigs).omit({
   id: true,
   createdAt: true,
@@ -155,6 +221,12 @@ export type EquipmentHistory = typeof equipmentHistory.$inferSelect;
 export type InsertEquipmentHistory = z.infer<typeof insertEquipmentHistorySchema>;
 export type System = typeof systems.$inferSelect;
 export type InsertSystem = z.infer<typeof insertSystemSchema>;
+export type Warehouse = typeof warehouses.$inferSelect;
+export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
+export type Toolbox = typeof toolboxes.$inferSelect;
+export type InsertToolbox = z.infer<typeof insertToolboxSchema>;
+export type Pouch = typeof pouches.$inferSelect;
+export type InsertPouch = z.infer<typeof insertPouchSchema>;
 export type SystemRequirement = z.infer<typeof systemRequirementSchema>;
 export type SystemConfig = typeof systemConfigs.$inferSelect;
 export type InsertSystemConfig = z.infer<typeof insertSystemConfigSchema>;

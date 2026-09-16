@@ -13,6 +13,12 @@ import {
   type InsertOutageLocationNote,
   type ActiveOutage,
   type InsertActiveOutage,
+  type Warehouse,
+  type InsertWarehouse,
+  type Toolbox,
+  type InsertToolbox,
+  type Pouch,
+  type InsertPouch,
   equipment as equipmentTable,
   equipmentHistory as equipmentHistoryTable,
   systems as systemsTable,
@@ -20,6 +26,9 @@ import {
   stagedSystems as stagedSystemsTable,
   outageLocationNotes as outageLocationNotesTable,
   activeOutage as activeOutageTable,
+  warehouses as warehousesTable,
+  toolboxes as toolboxesTable,
+  pouches as pouchesTable,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -67,6 +76,20 @@ export interface IStorage {
   getActiveOutage(): Promise<ActiveOutage | undefined>;
   setActiveOutage(outage: InsertActiveOutage): Promise<ActiveOutage>;
   clearActiveOutage(): Promise<boolean>;
+
+  // Warehouse, toolbox, and pouch registry
+  getAllWarehouses(): Promise<Warehouse[]>;
+  createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse>;
+  updateWarehouse(id: string, updates: Partial<InsertWarehouse>): Promise<Warehouse | undefined>;
+  deleteWarehouse(id: string): Promise<boolean>;
+  getAllToolboxes(): Promise<Toolbox[]>;
+  createToolbox(toolbox: InsertToolbox): Promise<Toolbox>;
+  updateToolbox(id: string, updates: Partial<InsertToolbox>): Promise<Toolbox | undefined>;
+  deleteToolbox(id: string): Promise<boolean>;
+  getAllPouches(): Promise<Pouch[]>;
+  createPouch(pouch: InsertPouch): Promise<Pouch>;
+  updatePouch(id: string, updates: Partial<InsertPouch>): Promise<Pouch | undefined>;
+  deletePouch(id: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -288,6 +311,75 @@ export class DatabaseStorage implements IStorage {
 
   async clearActiveOutage(): Promise<boolean> {
     const result = await db.delete(activeOutageTable).returning();
+    return result.length > 0;
+  }
+
+  async getAllWarehouses(): Promise<Warehouse[]> {
+    return await db.select().from(warehousesTable).orderBy(warehousesTable.name);
+  }
+
+  async createWarehouse(warehouse: InsertWarehouse): Promise<Warehouse> {
+    const result = await db.insert(warehousesTable).values(warehouse).returning();
+    return result[0];
+  }
+
+  async updateWarehouse(id: string, updates: Partial<InsertWarehouse>): Promise<Warehouse | undefined> {
+    const result = await db
+      .update(warehousesTable)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(warehousesTable.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteWarehouse(id: string): Promise<boolean> {
+    const result = await db.delete(warehousesTable).where(eq(warehousesTable.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getAllToolboxes(): Promise<Toolbox[]> {
+    return await db.select().from(toolboxesTable).orderBy(toolboxesTable.name);
+  }
+
+  async createToolbox(toolbox: InsertToolbox): Promise<Toolbox> {
+    const result = await db.insert(toolboxesTable).values(toolbox).returning();
+    return result[0];
+  }
+
+  async updateToolbox(id: string, updates: Partial<InsertToolbox>): Promise<Toolbox | undefined> {
+    const result = await db
+      .update(toolboxesTable)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(toolboxesTable.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteToolbox(id: string): Promise<boolean> {
+    const result = await db.delete(toolboxesTable).where(eq(toolboxesTable.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async getAllPouches(): Promise<Pouch[]> {
+    return await db.select().from(pouchesTable).orderBy(pouchesTable.name);
+  }
+
+  async createPouch(pouch: InsertPouch): Promise<Pouch> {
+    const result = await db.insert(pouchesTable).values(pouch).returning();
+    return result[0];
+  }
+
+  async updatePouch(id: string, updates: Partial<InsertPouch>): Promise<Pouch | undefined> {
+    const result = await db
+      .update(pouchesTable)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(pouchesTable.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deletePouch(id: string): Promise<boolean> {
+    const result = await db.delete(pouchesTable).where(eq(pouchesTable.id, id)).returning();
     return result.length > 0;
   }
 }

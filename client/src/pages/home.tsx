@@ -69,6 +69,7 @@ import {
   type BrandingState,
 } from "@/lib/branding";
 import { fontPresetOptions } from "@shared/branding";
+import PlatformRegistryPanel from "@/components/platform-registry-panel";
 
 const normalizeLocation = (location?: string | null) => (location ?? "").trim().toLowerCase();
 
@@ -5032,6 +5033,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       </header>
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
+        {!isOutageMode && canManageEquipment && <PlatformRegistryPanel />}
+
         {/* Stats Row */}
         {!isOutageMode && (
         <div className="grid grid-cols-3 gap-4">
