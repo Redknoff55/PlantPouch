@@ -152,8 +152,8 @@ export default function Landing() {
   const enabledPouches = (registry?.pouches ?? []).filter((pouch) => pouch.enabled);
   const hasRegistry = enabledWarehouses.length > 0;
 
-  const openPouch = (pouchId: string) => {
-    window.location.href = `/tech?pouch=${encodeURIComponent(pouchId)}`;
+  const openPouch = (toolboxId: string, pouchId: string) => {
+    window.location.href = `/tech?toolbox=${encodeURIComponent(toolboxId)}&pouch=${encodeURIComponent(pouchId)}`;
   };
 
   return (
@@ -214,7 +214,7 @@ export default function Landing() {
                                   <button
                                     key={pouch.id}
                                     className="flex w-full items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-primary/20"
-                                    onClick={() => openPouch(pouch.id)}
+                                    onClick={() => openPouch(toolbox.id, pouch.id)}
                                   >
                                     <Package className="h-4 w-4 text-primary" />
                                     <span>{pouch.name}</span>

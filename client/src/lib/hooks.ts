@@ -9,10 +9,10 @@ import type {
   InsertActiveOutage,
 } from "@shared/schema";
 
-export function useEquipment() {
+export function useEquipment(toolboxId?: string) {
   return useQuery({
-    queryKey: ['equipment'],
-    queryFn: api.equipment.getAll,
+    queryKey: ['equipment', toolboxId ?? 'all'],
+    queryFn: () => api.equipment.getAll(toolboxId),
   });
 }
 

@@ -18,6 +18,7 @@ export const stagedSystemMissingItemSchema = z.object({
 
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey(),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   category: text("category").notNull(),
   variant: text("variant"),

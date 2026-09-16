@@ -31,11 +31,12 @@ import {
   pouches as pouchesTable,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Equipment CRUD
-  getAllEquipment(): Promise<Equipment[]>;
+  getAllEquipment(toolboxId?: string): Promise<Equipment[]>;
+  assignUnscopedEquipment(toolboxId: string): Promise<number>;
   getEquipment(id: string): Promise<Equipment | undefined>;
   createEquipment(equipment: InsertEquipment): Promise<Equipment>;
   updateEquipment(id: string, updates: Partial<InsertEquipment>): Promise<Equipment | undefined>;
@@ -93,8 +94,18 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  async getAllEquipment(): Promise<Equipment[]> {
-    return await db.select().from(equipmentTable);
+  async getAllEquipment(toolboxId?: string): Promise<Equipment[]> {
+    if (!toolboxId) return await db.select().from(equipmentTable);
+    return await db.select().from(equipmentTable).where(eq(equipmentTable.toolboxId, toolboxId));
+  }
+
+  async assignUnscopedEquipment(toolboxId: string): Promise<number> {
+    const result = await db
+      .update(equipmentTable)
+      .set({ toolboxId, updatedAt: new Date() })
+      .where(isNull(equipmentTable.toolboxId))
+      .returning({ id: equipmentTable.id });
+    return result.length;
   }
 
   async getEquipment(id: string): Promise<Equipment | undefined> {

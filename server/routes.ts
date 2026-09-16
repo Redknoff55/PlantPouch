@@ -134,6 +134,20 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/toolboxes/:id/claim-equipment", async (req, res) => {
+    try {
+      const toolboxes = await storage.getAllToolboxes();
+      if (!toolboxes.some((toolbox) => toolbox.id === req.params.id)) {
+        return res.status(404).json({ error: "Toolbox not found" });
+      }
+      const claimedCount = await storage.assignUnscopedEquipment(req.params.id);
+      res.json({ claimedCount });
+    } catch (error) {
+      console.error("Error assigning equipment to toolbox:", error);
+      res.status(500).json({ error: "Failed to assign equipment to toolbox" });
+    }
+  });
+
   app.patch("/api/toolboxes/:id", async (req, res) => {
     try {
       const toolbox = await storage.updateToolbox(req.params.id, insertToolboxSchema.partial().parse(req.body));
@@ -224,7 +238,8 @@ export async function registerRoutes(
   // Get all equipment
   app.get("/api/equipment", async (req, res) => {
     try {
-      const equipment = await storage.getAllEquipment();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const equipment = await storage.getAllEquipment(toolboxId);
       res.json(equipment);
     } catch (error) {
       console.error("Error fetching equipment:", error);

@@ -999,15 +999,17 @@ function ActionModal({
 function SystemCheckoutModal({ 
   isOpen, 
   onClose,
+  toolboxId,
   initialSystemColor,
   initialValveNumber,
 }: { 
   isOpen: boolean; 
   onClose: () => void;
+  toolboxId?: string;
   initialSystemColor?: string | null;
   initialValveNumber?: string | null;
 }) {
-  const { data: equipment = [] } = useEquipment();
+  const { data: equipment = [] } = useEquipment(toolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs();
   const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -1636,12 +1638,14 @@ function SystemCheckoutModal({
 
 function SystemCheckInModal({ 
   isOpen, 
-  onClose 
+  onClose,
+  toolboxId,
 }: { 
   isOpen: boolean; 
-  onClose: () => void 
+  onClose: () => void;
+  toolboxId?: string;
 }) {
-  const { data: equipment = [] } = useEquipment();
+  const { data: equipment = [] } = useEquipment(toolboxId);
   const checkinByWorkOrder = useCheckinByWorkOrder();
   const [step, setStep] = useState<1 | 2>(1);
   const [workOrder, setWorkOrder] = useState("");
@@ -1830,12 +1834,14 @@ function SystemCheckInModal({
 function AddEquipmentModal({ 
   isOpen, 
   onClose,
+  toolboxId,
   locationOptions,
   systemColorOptions,
   onAddLocation,
 }: { 
   isOpen: boolean; 
   onClose: () => void;
+  toolboxId?: string;
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
@@ -1874,6 +1880,7 @@ function AddEquipmentModal({
     
     createEquipment.mutate({
       id: formData.id,
+      toolboxId,
       name: formData.name,
       category: formData.category,
       variant: formData.variant.trim() || undefined,
@@ -2197,10 +2204,12 @@ function BrandingModal({
 
 function AdminImportModal({
   isOpen,
-  onClose
+  onClose,
+  toolboxId,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  toolboxId?: string;
 }) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<InsertEquipment[]>([]);
@@ -2356,7 +2365,7 @@ function AdminImportModal({
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
       try {
-        await api.equipment.create(row);
+        await api.equipment.create({ ...row, toolboxId });
         successCount += 1;
       } catch (error) {
         importErrors.push(`${row.id}: ${error instanceof Error ? error.message : "Failed to create"}`);
@@ -3833,7 +3842,9 @@ function ActivityLogModal({
 }
 
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "outage" }) {
-  const { data: equipment = [], isLoading } = useEquipment();
+  const selectedToolboxId =
+    typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("toolbox") ?? undefined;
+  const { data: equipment = [], isLoading } = useEquipment(selectedToolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs();
   const { data: stagedSystems = [] } = useStagedSystems();
   const { data: outageLocationNotes } = useOutageLocationNotes();
@@ -5989,6 +6000,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
           <AddEquipmentModal 
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)}
+            toolboxId={selectedToolboxId}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}
@@ -5998,6 +6010,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
           <AdminImportModal
             isOpen={isImportModalOpen}
             onClose={() => setIsImportModalOpen(false)}
+            toolboxId={selectedToolboxId}
           />
         )}
         {canManageEquipment && isBrandingOpen && (
@@ -6015,6 +6028,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         {isSystemCheckoutOpen && (
           <SystemCheckoutModal
             isOpen={isSystemCheckoutOpen}
+            toolboxId={selectedToolboxId}
             onClose={() => {
               setIsSystemCheckoutOpen(false);
               setCheckoutPreset(null);
@@ -6026,6 +6040,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         {isSystemCheckInOpen && (
           <SystemCheckInModal
             isOpen={isSystemCheckInOpen}
+            toolboxId={selectedToolboxId}
             onClose={() => setIsSystemCheckInOpen(false)}
           />
         )}

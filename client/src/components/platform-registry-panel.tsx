@@ -123,6 +123,16 @@ export default function PlatformRegistryPanel() {
     }
   };
 
+  const claimEquipment = async (id: string, name: string) => {
+    try {
+      const claimedCount = await api.registry.claimUnassignedEquipment(id);
+      await queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      toast.success(`${claimedCount} unassigned item(s) assigned to ${name}.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to assign equipment.");
+    }
+  };
+
   return (
     <Card className="mb-6 border-primary/20">
       <CardHeader>
@@ -175,7 +185,7 @@ export default function PlatformRegistryPanel() {
 
             <div className="grid gap-4 lg:grid-cols-3">
               <RegistryList title="Warehouses" emptyLabel="No warehouses yet." items={warehouses.map((item) => ({ ...item, parent: undefined }))} onToggle={(item) => toggle("warehouse", item.id, item.enabled)} onRemove={(item) => remove("warehouse", item.id, item.name)} />
-              <RegistryList title="Toolboxes" emptyLabel="No toolboxes yet." items={toolboxes.map((item) => ({ ...item, parent: warehouses.find((warehouse) => warehouse.id === item.warehouseId)?.name }))} onToggle={(item) => toggle("toolbox", item.id, item.enabled)} onRemove={(item) => remove("toolbox", item.id, item.name)} />
+              <RegistryList title="Toolboxes" emptyLabel="No toolboxes yet." items={toolboxes.map((item) => ({ ...item, parent: warehouses.find((warehouse) => warehouse.id === item.warehouseId)?.name }))} onToggle={(item) => toggle("toolbox", item.id, item.enabled)} onRemove={(item) => remove("toolbox", item.id, item.name)} onClaim={(item) => claimEquipment(item.id, item.name)} />
               <RegistryList title="Pouches" emptyLabel="No pouches yet." items={pouches.map((item) => ({ ...item, parent: toolboxes.find((toolbox) => toolbox.id === item.toolboxId)?.name }))} onToggle={(item) => toggle("pouch", item.id, item.enabled)} onRemove={(item) => remove("pouch", item.id, item.name)} />
             </div>
           </>
@@ -187,7 +197,7 @@ export default function PlatformRegistryPanel() {
 
 type RegistryItem = { id: string; name: string; enabled: boolean; parent?: string };
 
-function RegistryList({ title, emptyLabel, items, onToggle, onRemove }: { title: string; emptyLabel: string; items: RegistryItem[]; onToggle: (item: RegistryItem) => void; onRemove: (item: RegistryItem) => void }) {
+function RegistryList({ title, emptyLabel, items, onToggle, onRemove, onClaim }: { title: string; emptyLabel: string; items: RegistryItem[]; onToggle: (item: RegistryItem) => void; onRemove: (item: RegistryItem) => void; onClaim?: (item: RegistryItem) => void }) {
   return (
     <div className="rounded-lg border border-border/60 p-3">
       <h3 className="mb-2 text-sm font-semibold">{title}</h3>
@@ -200,6 +210,7 @@ function RegistryList({ title, emptyLabel, items, onToggle, onRemove }: { title:
                 {item.parent && <div className="truncate text-[11px] text-muted-foreground">in {item.parent}</div>}
               </div>
               <Switch checked={item.enabled} onCheckedChange={() => onToggle(item)} aria-label={`Toggle ${item.name}`} />
+              {onClaim && <Button variant="ghost" size="sm" className="h-8 px-2 text-[10px]" onClick={() => onClaim(item)}>Claim</Button>}
               <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => onRemove(item)} aria-label={`Delete ${item.name}`}>
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
