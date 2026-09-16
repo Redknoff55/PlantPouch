@@ -140,8 +140,8 @@ export async function registerRoutes(
       if (!toolboxes.some((toolbox) => toolbox.id === req.params.id)) {
         return res.status(404).json({ error: "Toolbox not found" });
       }
-      const claimedCount = await storage.assignUnscopedEquipment(req.params.id);
-      res.json({ claimedCount });
+      const claimed = await storage.assignUnscopedResources(req.params.id);
+      res.json({ claimed });
     } catch (error) {
       console.error("Error assigning equipment to toolbox:", error);
       res.status(500).json({ error: "Failed to assign equipment to toolbox" });
@@ -845,9 +845,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/system-configs", async (_req, res) => {
+  app.get("/api/system-configs", async (req, res) => {
     try {
-      const configs = await storage.getAllSystemConfigs();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const configs = await storage.getAllSystemConfigs(toolboxId);
       res.json(configs);
     } catch (error) {
       console.error("Error fetching system configs:", error);
@@ -857,7 +858,8 @@ export async function registerRoutes(
 
   app.get("/api/system-configs/:color", async (req, res) => {
     try {
-      const config = await storage.getSystemConfig(req.params.color);
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const config = await storage.getSystemConfig(req.params.color, toolboxId);
       if (!config) {
         return res.status(404).json({ error: "System config not found" });
       }
@@ -885,9 +887,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/staged-systems", async (_req, res) => {
+  app.get("/api/staged-systems", async (req, res) => {
     try {
-      const stagedSystems = await storage.getAllStagedSystems();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const stagedSystems = await storage.getAllStagedSystems(toolboxId);
       res.json(stagedSystems);
     } catch (error) {
       console.error("Error fetching staged systems:", error);
@@ -904,7 +907,7 @@ export async function registerRoutes(
       });
 
       const stagedSystem = await storage.upsertStagedSystem(validated);
-      const allEquipment = await storage.getAllEquipment();
+      const allEquipment = await storage.getAllEquipment(validated.toolboxId ?? undefined);
       const systemItems = allEquipment.filter(
         (item) => (item.temporarySystemColor || item.systemColor) === req.params.color
       );
@@ -946,7 +949,8 @@ export async function registerRoutes(
 
   app.delete("/api/staged-systems/:color", async (req, res) => {
     try {
-      const deleted = await storage.deleteStagedSystem(req.params.color);
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const deleted = await storage.deleteStagedSystem(req.params.color, toolboxId);
       if (!deleted) {
         return res.status(404).json({ error: "Staged system not found" });
       }
@@ -959,7 +963,8 @@ export async function registerRoutes(
 
   app.post("/api/staged-systems/:color/checkout", async (req, res) => {
     try {
-      await storage.deleteStagedSystem(req.params.color);
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      await storage.deleteStagedSystem(req.params.color, toolboxId);
       res.json({ ok: true });
     } catch (error) {
       console.error("Error clearing staged system on checkout:", error);
@@ -967,9 +972,10 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/outage-board/location-notes", async (_req, res) => {
+  app.get("/api/outage-board/location-notes", async (req, res) => {
     try {
-      const notes = await storage.getAllOutageLocationNotes();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const notes = await storage.getAllOutageLocationNotes(toolboxId);
       res.json(notes);
     } catch (error) {
       console.error("Error fetching outage board notes:", error);

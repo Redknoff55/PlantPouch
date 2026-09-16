@@ -149,36 +149,36 @@ export function useDeleteSystem() {
   });
 }
 
-export function useSystemConfigs() {
+export function useSystemConfigs(toolboxId?: string) {
   return useQuery({
-    queryKey: ['system-configs'],
-    queryFn: api.systemConfigs.getAll,
+    queryKey: ['system-configs', toolboxId ?? 'all'],
+    queryFn: () => api.systemConfigs.getAll(toolboxId),
   });
 }
 
-export function useSaveSystemConfig() {
+export function useSaveSystemConfig(toolboxId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ systemColor, data }: { systemColor: string; data: InsertSystemConfig }) =>
-      api.systemConfigs.save(systemColor, data),
+      api.systemConfigs.save(systemColor, { ...data, toolboxId: data.toolboxId ?? toolboxId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
     },
   });
 }
 
-export function useStagedSystems() {
+export function useStagedSystems(toolboxId?: string) {
   return useQuery({
-    queryKey: ['staged-systems'],
-    queryFn: api.stagedSystems.getAll,
+    queryKey: ['staged-systems', toolboxId ?? 'all'],
+    queryFn: () => api.stagedSystems.getAll(toolboxId),
   });
 }
 
-export function useSaveStagedSystem() {
+export function useSaveStagedSystem(toolboxId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ systemColor, data }: { systemColor: string; data: InsertStagedSystem }) =>
-      api.stagedSystems.save(systemColor, data),
+      api.stagedSystems.save(systemColor, { ...data, toolboxId: data.toolboxId ?? toolboxId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
@@ -186,10 +186,10 @@ export function useSaveStagedSystem() {
   });
 }
 
-export function useClearStagedSystem() {
+export function useClearStagedSystem(toolboxId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (systemColor: string) => api.stagedSystems.clear(systemColor),
+    mutationFn: (systemColor: string) => api.stagedSystems.clear(systemColor, toolboxId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
@@ -197,18 +197,18 @@ export function useClearStagedSystem() {
   });
 }
 
-export function useOutageLocationNotes() {
+export function useOutageLocationNotes(toolboxId?: string) {
   return useQuery({
-    queryKey: ['outage-location-notes'],
-    queryFn: api.outageBoard.getLocationNotes,
+    queryKey: ['outage-location-notes', toolboxId ?? 'all'],
+    queryFn: () => api.outageBoard.getLocationNotes(toolboxId),
   });
 }
 
-export function useSaveOutageLocationNote() {
+export function useSaveOutageLocationNote(toolboxId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ location, data }: { location: string; data: InsertOutageLocationNote }) =>
-      api.outageBoard.saveLocationNote(location, data),
+      api.outageBoard.saveLocationNote(location, { ...data, toolboxId: data.toolboxId ?? toolboxId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['outage-location-notes'] });
     },

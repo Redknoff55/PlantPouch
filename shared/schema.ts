@@ -79,7 +79,8 @@ export const pouches = pgTable("pouches", {
 
 export const systemConfigs = pgTable("system_configs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  systemColor: text("system_color").notNull().unique(),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
+  systemColor: text("system_color").notNull(),
   displayName: text("display_name"),
   requirements: jsonb("requirements")
     .$type<Array<z.infer<typeof systemRequirementSchema>>>()
@@ -91,7 +92,8 @@ export const systemConfigs = pgTable("system_configs", {
 
 export const stagedSystems = pgTable("staged_systems", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  systemColor: text("system_color").notNull().unique(),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
+  systemColor: text("system_color").notNull(),
   stagingLocation: text("staging_location").notNull(),
   stagedBy: text("staged_by").notNull(),
   valveNumber: text("valve_number"),
@@ -108,7 +110,8 @@ export const stagedSystems = pgTable("staged_systems", {
 
 export const outageLocationNotes = pgTable("outage_location_notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  location: text("location").notNull().unique(),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
+  location: text("location").notNull(),
   note: text("note").notNull().default(""),
   updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -117,6 +120,7 @@ export const outageLocationNotes = pgTable("outage_location_notes", {
 
 export const activeOutage = pgTable("active_outage", {
   id: varchar("id").primaryKey().default("active"),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   unit: text("unit").notNull(),
   locations: jsonb("locations").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
@@ -186,6 +190,7 @@ export const insertSystemConfigSchema = createInsertSchema(systemConfigs).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  toolboxId: z.string().min(1).optional().nullable(),
   requirements: z.array(systemRequirementSchema).default([]),
 });
 
@@ -194,6 +199,7 @@ export const insertStagedSystemSchema = createInsertSchema(stagedSystems).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  toolboxId: z.string().min(1).optional().nullable(),
   missingItems: z.array(stagedSystemMissingItemSchema).default([]),
 });
 
@@ -202,6 +208,7 @@ export const insertOutageLocationNoteSchema = createInsertSchema(outageLocationN
   createdAt: true,
   updatedAt: true,
 }).extend({
+  toolboxId: z.string().min(1).optional().nullable(),
   location: z.string().min(1),
   note: z.string().default(""),
 });
@@ -211,6 +218,7 @@ export const insertActiveOutageSchema = createInsertSchema(activeOutage).omit({
   createdAt: true,
   updatedAt: true,
 }).extend({
+  toolboxId: z.string().min(1),
   name: z.string().min(1),
   unit: z.string().min(1),
   locations: z.array(z.string().min(1)).default([]),

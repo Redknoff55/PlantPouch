@@ -247,7 +247,7 @@ export default function Landing() {
           <button
             className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
             onClick={() => {
-              window.location.href = "/outage";
+              window.location.href = `/outage?toolbox=${encodeURIComponent(activeOutage.toolboxId ?? "")}`;
             }}
           >
             <ClipboardList className="w-5 h-5 text-primary" />

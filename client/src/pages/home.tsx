@@ -52,7 +52,7 @@ import {
   PackageCheck,
   ClipboardList,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { addMonths, format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1010,7 +1010,7 @@ function SystemCheckoutModal({
   initialValveNumber?: string | null;
 }) {
   const { data: equipment = [] } = useEquipment(toolboxId);
-  const { data: systemConfigs = [] } = useSystemConfigs();
+  const { data: systemConfigs = [] } = useSystemConfigs(toolboxId);
   const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedComputerColor, setSelectedComputerColor] = useState<string>("");
@@ -3844,18 +3844,23 @@ function ActivityLogModal({
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "outage" }) {
   const selectedToolboxId =
     typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("toolbox") ?? undefined;
-  const { data: equipment = [], isLoading } = useEquipment(selectedToolboxId);
-  const { data: systemConfigs = [] } = useSystemConfigs();
-  const { data: stagedSystems = [] } = useStagedSystems();
-  const { data: outageLocationNotes } = useOutageLocationNotes();
   const { data: activeOutage = null } = useActiveOutage();
+  const equipmentToolboxId = selectedToolboxId ?? (mode === "outage" ? activeOutage?.toolboxId ?? undefined : undefined);
+  const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId);
+  const { data: systemConfigs = [] } = useSystemConfigs(equipmentToolboxId);
+  const { data: stagedSystems = [] } = useStagedSystems(equipmentToolboxId);
+  const { data: outageLocationNotes } = useOutageLocationNotes(equipmentToolboxId);
+  const { data: registry } = useQuery({
+    queryKey: ["platform-registry"],
+    queryFn: api.registry.get,
+  });
   const adminEnabled = mode === "admin" || mode === "outage";
   const isOutageMode = mode === "outage";
   const updateEquipment = useUpdateEquipment();
-  const saveSystemConfig = useSaveSystemConfig();
-  const saveStagedSystem = useSaveStagedSystem();
-  const clearStagedSystem = useClearStagedSystem();
-  const saveOutageLocationNote = useSaveOutageLocationNote();
+  const saveSystemConfig = useSaveSystemConfig(equipmentToolboxId);
+  const saveStagedSystem = useSaveStagedSystem(equipmentToolboxId);
+  const clearStagedSystem = useClearStagedSystem(equipmentToolboxId);
+  const saveOutageLocationNote = useSaveOutageLocationNote(equipmentToolboxId);
   const saveActiveOutage = useSaveActiveOutage();
   const clearActiveOutage = useClearActiveOutage();
   const queryClient = useQueryClient();
@@ -3905,6 +3910,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
   );
   const [outageMoveNotes, setOutageMoveNotes] = useState("");
+  const [outageToolboxId, setOutageToolboxId] = useState("");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -3917,6 +3923,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   const activeOutageLocations = activeOutage?.locations ?? [];
+  const enabledToolboxes = (registry?.toolboxes ?? []).filter((toolbox) => toolbox.enabled);
   
   const stats = {
     total: equipment.length,
@@ -4241,6 +4248,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, [activeOutage?.unit]);
 
   useEffect(() => {
+    if (activeOutage?.toolboxId) {
+      setOutageToolboxId(activeOutage.toolboxId);
+    }
+  }, [activeOutage?.toolboxId]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     localStorage.setItem("plantpouch-tech-name", outageMoveBy);
   }, [outageMoveBy]);
@@ -4406,8 +4419,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const handleSetOutagePreset = async (unit: string) => {
     const preset = outagePresets.find((entry) => entry.unit === unit);
     if (!preset) return;
+    if (!outageToolboxId) {
+      toast.error("Choose a toolbox before starting outage mode.");
+      return;
+    }
     try {
-      await saveActiveOutage.mutateAsync(preset);
+      await saveActiveOutage.mutateAsync({ ...preset, toolboxId: outageToolboxId });
       setCustomLocations((prev) => {
         const next = new Set(prev);
         preset.locations.forEach((location) => {
@@ -4981,6 +4998,24 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             </div>
             
             <div className="flex gap-2">
+                {mode === "admin" && (
+                  <select
+                    className="h-10 max-w-40 rounded-md border border-input bg-background px-2 text-sm"
+                    value={selectedToolboxId ?? ""}
+                    onChange={(event) => {
+                      const nextToolboxId = event.target.value;
+                      window.location.href = nextToolboxId
+                        ? `/admin?toolbox=${encodeURIComponent(nextToolboxId)}`
+                        : "/admin";
+                    }}
+                    aria-label="Filter admin by toolbox"
+                  >
+                    <option value="">All toolboxes</option>
+                    {enabledToolboxes.map((toolbox) => (
+                      <option key={toolbox.id} value={toolbox.id}>{toolbox.name}</option>
+                    ))}
+                  </select>
+                )}
                 <Button
                   variant="outline"
                   size="icon"
@@ -5093,6 +5128,21 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                   ? `${activeOutage.locations.length} board locations active`
                   : "Choose a preset when an outage starts. This does not move systems by itself."}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Toolbox for this outage</Label>
+              <Select value={outageToolboxId} onValueChange={setOutageToolboxId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose AOV, MOV, or another toolbox..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {enabledToolboxes.map((toolbox) => (
+                    <SelectItem key={toolbox.id} value={toolbox.id}>
+                      {toolbox.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2 sm:grid-cols-3">
               {outagePresets.map((preset) => (

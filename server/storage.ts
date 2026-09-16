@@ -37,6 +37,7 @@ export interface IStorage {
   // Equipment CRUD
   getAllEquipment(toolboxId?: string): Promise<Equipment[]>;
   assignUnscopedEquipment(toolboxId: string): Promise<number>;
+  assignUnscopedResources(toolboxId: string): Promise<{ equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number }>;
   getEquipment(id: string): Promise<Equipment | undefined>;
   createEquipment(equipment: InsertEquipment): Promise<Equipment>;
   updateEquipment(id: string, updates: Partial<InsertEquipment>): Promise<Equipment | undefined>;
@@ -58,19 +59,19 @@ export interface IStorage {
   deleteSystem(id: string): Promise<boolean>;
 
   // System config CRUD
-  getAllSystemConfigs(): Promise<SystemConfig[]>;
-  getSystemConfig(systemColor: string): Promise<SystemConfig | undefined>;
+  getAllSystemConfigs(toolboxId?: string): Promise<SystemConfig[]>;
+  getSystemConfig(systemColor: string, toolboxId?: string): Promise<SystemConfig | undefined>;
   upsertSystemConfig(config: InsertSystemConfig): Promise<SystemConfig>;
 
   // Staged systems CRUD
-  getAllStagedSystems(): Promise<StagedSystem[]>;
-  getStagedSystem(systemColor: string): Promise<StagedSystem | undefined>;
+  getAllStagedSystems(toolboxId?: string): Promise<StagedSystem[]>;
+  getStagedSystem(systemColor: string, toolboxId?: string): Promise<StagedSystem | undefined>;
   upsertStagedSystem(stagedSystem: InsertStagedSystem): Promise<StagedSystem>;
-  deleteStagedSystem(systemColor: string): Promise<boolean>;
+  deleteStagedSystem(systemColor: string, toolboxId?: string): Promise<boolean>;
 
   // Outage board location notes
-  getAllOutageLocationNotes(): Promise<OutageLocationNote[]>;
-  getOutageLocationNote(location: string): Promise<OutageLocationNote | undefined>;
+  getAllOutageLocationNotes(toolboxId?: string): Promise<OutageLocationNote[]>;
+  getOutageLocationNote(location: string, toolboxId?: string): Promise<OutageLocationNote | undefined>;
   upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote>;
 
   // Active outage mode
@@ -106,6 +107,16 @@ export class DatabaseStorage implements IStorage {
       .where(isNull(equipmentTable.toolboxId))
       .returning({ id: equipmentTable.id });
     return result.length;
+  }
+
+  async assignUnscopedResources(toolboxId: string) {
+    const [equipment, systemConfigs, stagedSystems, outageNotes] = await Promise.all([
+      this.assignUnscopedEquipment(toolboxId),
+      db.update(systemConfigsTable).set({ toolboxId }).where(isNull(systemConfigsTable.toolboxId)).returning({ id: systemConfigsTable.id }),
+      db.update(stagedSystemsTable).set({ toolboxId }).where(isNull(stagedSystemsTable.toolboxId)).returning({ id: stagedSystemsTable.id }),
+      db.update(outageLocationNotesTable).set({ toolboxId }).where(isNull(outageLocationNotesTable.toolboxId)).returning({ id: outageLocationNotesTable.id }),
+    ]);
+    return { equipment, systemConfigs: systemConfigs.length, stagedSystems: stagedSystems.length, outageNotes: outageNotes.length };
   }
 
   async getEquipment(id: string): Promise<Equipment | undefined> {
@@ -193,20 +204,24 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
-  async getAllSystemConfigs(): Promise<SystemConfig[]> {
-    return await db.select().from(systemConfigsTable);
+  async getAllSystemConfigs(toolboxId?: string): Promise<SystemConfig[]> {
+    if (!toolboxId) return await db.select().from(systemConfigsTable);
+    return await db.select().from(systemConfigsTable).where(eq(systemConfigsTable.toolboxId, toolboxId));
   }
 
-  async getSystemConfig(systemColor: string): Promise<SystemConfig | undefined> {
+  async getSystemConfig(systemColor: string, toolboxId?: string): Promise<SystemConfig | undefined> {
     const result = await db
       .select()
       .from(systemConfigsTable)
-      .where(eq(systemConfigsTable.systemColor, systemColor));
+      .where(and(
+        eq(systemConfigsTable.systemColor, systemColor),
+        ...(toolboxId ? [eq(systemConfigsTable.toolboxId, toolboxId)] : [])
+      ));
     return result[0];
   }
 
   async upsertSystemConfig(config: InsertSystemConfig): Promise<SystemConfig> {
-    const existing = await this.getSystemConfig(config.systemColor);
+    const existing = await this.getSystemConfig(config.systemColor, config.toolboxId ?? undefined);
     if (existing) {
       const result = await db
         .update(systemConfigsTable)
@@ -214,7 +229,10 @@ export class DatabaseStorage implements IStorage {
           ...config,
           updatedAt: new Date(),
         })
-        .where(eq(systemConfigsTable.systemColor, config.systemColor))
+        .where(and(
+          eq(systemConfigsTable.systemColor, config.systemColor),
+          ...(config.toolboxId ? [eq(systemConfigsTable.toolboxId, config.toolboxId)] : [])
+        ))
         .returning();
       return result[0];
     }
@@ -223,20 +241,26 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getAllStagedSystems(): Promise<StagedSystem[]> {
-    return await db.select().from(stagedSystemsTable).orderBy(desc(stagedSystemsTable.updatedAt));
+  async getAllStagedSystems(toolboxId?: string): Promise<StagedSystem[]> {
+    const query = db.select().from(stagedSystemsTable);
+    return await (toolboxId
+      ? query.where(eq(stagedSystemsTable.toolboxId, toolboxId)).orderBy(desc(stagedSystemsTable.updatedAt))
+      : query.orderBy(desc(stagedSystemsTable.updatedAt)));
   }
 
-  async getStagedSystem(systemColor: string): Promise<StagedSystem | undefined> {
+  async getStagedSystem(systemColor: string, toolboxId?: string): Promise<StagedSystem | undefined> {
     const result = await db
       .select()
       .from(stagedSystemsTable)
-      .where(eq(stagedSystemsTable.systemColor, systemColor));
+      .where(and(
+        eq(stagedSystemsTable.systemColor, systemColor),
+        ...(toolboxId ? [eq(stagedSystemsTable.toolboxId, toolboxId)] : [])
+      ));
     return result[0];
   }
 
   async upsertStagedSystem(stagedSystem: InsertStagedSystem): Promise<StagedSystem> {
-    const existing = await this.getStagedSystem(stagedSystem.systemColor);
+    const existing = await this.getStagedSystem(stagedSystem.systemColor, stagedSystem.toolboxId ?? undefined);
     if (existing) {
       const result = await db
         .update(stagedSystemsTable)
@@ -244,7 +268,10 @@ export class DatabaseStorage implements IStorage {
           ...stagedSystem,
           updatedAt: new Date(),
         })
-        .where(eq(stagedSystemsTable.systemColor, stagedSystem.systemColor))
+        .where(and(
+          eq(stagedSystemsTable.systemColor, stagedSystem.systemColor),
+          ...(stagedSystem.toolboxId ? [eq(stagedSystemsTable.toolboxId, stagedSystem.toolboxId)] : [])
+        ))
         .returning();
       return result[0];
     }
@@ -253,28 +280,37 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async deleteStagedSystem(systemColor: string): Promise<boolean> {
+  async deleteStagedSystem(systemColor: string, toolboxId?: string): Promise<boolean> {
     const result = await db
       .delete(stagedSystemsTable)
-      .where(eq(stagedSystemsTable.systemColor, systemColor))
+      .where(and(
+        eq(stagedSystemsTable.systemColor, systemColor),
+        ...(toolboxId ? [eq(stagedSystemsTable.toolboxId, toolboxId)] : [])
+      ))
       .returning();
     return result.length > 0;
   }
 
-  async getAllOutageLocationNotes(): Promise<OutageLocationNote[]> {
-    return await db.select().from(outageLocationNotesTable).orderBy(outageLocationNotesTable.location);
+  async getAllOutageLocationNotes(toolboxId?: string): Promise<OutageLocationNote[]> {
+    const query = db.select().from(outageLocationNotesTable);
+    return await (toolboxId
+      ? query.where(eq(outageLocationNotesTable.toolboxId, toolboxId)).orderBy(outageLocationNotesTable.location)
+      : query.orderBy(outageLocationNotesTable.location));
   }
 
-  async getOutageLocationNote(location: string): Promise<OutageLocationNote | undefined> {
+  async getOutageLocationNote(location: string, toolboxId?: string): Promise<OutageLocationNote | undefined> {
     const result = await db
       .select()
       .from(outageLocationNotesTable)
-      .where(eq(outageLocationNotesTable.location, location));
+      .where(and(
+        eq(outageLocationNotesTable.location, location),
+        ...(toolboxId ? [eq(outageLocationNotesTable.toolboxId, toolboxId)] : [])
+      ));
     return result[0];
   }
 
   async upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote> {
-    const existing = await this.getOutageLocationNote(note.location);
+    const existing = await this.getOutageLocationNote(note.location, note.toolboxId ?? undefined);
     if (existing) {
       const result = await db
         .update(outageLocationNotesTable)
@@ -282,7 +318,10 @@ export class DatabaseStorage implements IStorage {
           ...note,
           updatedAt: new Date(),
         })
-        .where(eq(outageLocationNotesTable.location, note.location))
+        .where(and(
+          eq(outageLocationNotesTable.location, note.location),
+          ...(note.toolboxId ? [eq(outageLocationNotesTable.toolboxId, note.toolboxId)] : [])
+        ))
         .returning();
       return result[0];
     }

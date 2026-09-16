@@ -125,9 +125,12 @@ export default function PlatformRegistryPanel() {
 
   const claimEquipment = async (id: string, name: string) => {
     try {
-      const claimedCount = await api.registry.claimUnassignedEquipment(id);
+      const claimed = await api.registry.claimUnassignedEquipment(id);
       await queryClient.invalidateQueries({ queryKey: ["equipment"] });
-      toast.success(`${claimedCount} unassigned item(s) assigned to ${name}.`);
+      await queryClient.invalidateQueries({ queryKey: ["system-configs"] });
+      await queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
+      await queryClient.invalidateQueries({ queryKey: ["outage-location-notes"] });
+      toast.success(`${claimed.equipment} equipment item(s) and ${claimed.systemConfigs + claimed.stagedSystems + claimed.outageNotes} other resource(s) assigned to ${name}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to assign equipment.");
     }

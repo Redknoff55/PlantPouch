@@ -73,13 +73,13 @@ export const api = {
       const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete toolbox");
     },
-    claimUnassignedEquipment: async (toolboxId: string): Promise<number> => {
+    claimUnassignedEquipment: async (toolboxId: string): Promise<{ equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number }> => {
       const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(toolboxId)}/claim-equipment`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to assign equipment to toolbox");
-      const result: { claimedCount: number } = await res.json();
-      return result.claimedCount;
+      const result: { claimed: { equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number } } = await res.json();
+      return result.claimed;
     },
     createPouch: async (data: InsertPouch): Promise<Pouch> => {
       const res = await fetch(`${API_BASE}/pouches`, {
@@ -306,8 +306,9 @@ export const api = {
   },
 
   systemConfigs: {
-    getAll: async (): Promise<SystemConfig[]> => {
-      const res = await fetch(`${API_BASE}/system-configs`);
+    getAll: async (toolboxId?: string): Promise<SystemConfig[]> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/system-configs${query}`);
       if (!res.ok) throw new Error('Failed to fetch system configs');
       return res.json();
     },
@@ -323,8 +324,9 @@ export const api = {
   },
 
   stagedSystems: {
-    getAll: async (): Promise<StagedSystem[]> => {
-      const res = await fetch(`${API_BASE}/staged-systems`);
+    getAll: async (toolboxId?: string): Promise<StagedSystem[]> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/staged-systems${query}`);
       if (!res.ok) throw new Error('Failed to fetch staged systems');
       return res.json();
     },
@@ -348,14 +350,16 @@ export const api = {
       }
       return res.json();
     },
-    clear: async (systemColor: string): Promise<void> => {
-      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}`, {
+    clear: async (systemColor: string, toolboxId?: string): Promise<void> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to clear staged system');
     },
-    checkout: async (systemColor: string): Promise<void> => {
-      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}/checkout`, {
+    checkout: async (systemColor: string, toolboxId?: string): Promise<void> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/staged-systems/${encodeURIComponent(systemColor)}/checkout${query}`, {
         method: 'POST',
       });
       if (!res.ok) throw new Error('Failed to clear staged system for checkout');
@@ -384,8 +388,9 @@ export const api = {
       });
       if (!res.ok) throw new Error('Failed to clear active outage');
     },
-    getLocationNotes: async (): Promise<OutageLocationNote[]> => {
-      const res = await fetch(`${API_BASE}/outage-board/location-notes`);
+    getLocationNotes: async (toolboxId?: string): Promise<OutageLocationNote[]> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/outage-board/location-notes${query}`);
       if (!res.ok) throw new Error('Failed to fetch outage board notes');
       return res.json();
     },
