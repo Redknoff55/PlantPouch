@@ -9,10 +9,11 @@ import type {
   InsertActiveOutage,
 } from "@shared/schema";
 
-export function useEquipment(toolboxId?: string) {
+export function useEquipment(toolboxId?: string, enabled = true) {
   return useQuery({
     queryKey: ['equipment', toolboxId ?? 'all'],
     queryFn: () => api.equipment.getAll(toolboxId),
+    enabled,
   });
 }
 
@@ -149,10 +150,11 @@ export function useDeleteSystem() {
   });
 }
 
-export function useSystemConfigs(toolboxId?: string) {
+export function useSystemConfigs(toolboxId?: string, enabled = true) {
   return useQuery({
     queryKey: ['system-configs', toolboxId ?? 'all'],
     queryFn: () => api.systemConfigs.getAll(toolboxId),
+    enabled,
   });
 }
 
@@ -167,10 +169,11 @@ export function useSaveSystemConfig(toolboxId?: string) {
   });
 }
 
-export function useStagedSystems(toolboxId?: string) {
+export function useStagedSystems(toolboxId?: string, enabled = true) {
   return useQuery({
     queryKey: ['staged-systems', toolboxId ?? 'all'],
     queryFn: () => api.stagedSystems.getAll(toolboxId),
+    enabled,
   });
 }
 
@@ -197,10 +200,11 @@ export function useClearStagedSystem(toolboxId?: string) {
   });
 }
 
-export function useOutageLocationNotes(toolboxId?: string) {
+export function useOutageLocationNotes(toolboxId?: string, enabled = true) {
   return useQuery({
     queryKey: ['outage-location-notes', toolboxId ?? 'all'],
     queryFn: () => api.outageBoard.getLocationNotes(toolboxId),
+    enabled,
   });
 }
 

@@ -3846,10 +3846,11 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("toolbox") ?? undefined;
   const { data: activeOutage = null } = useActiveOutage();
   const equipmentToolboxId = selectedToolboxId ?? (mode === "outage" ? activeOutage?.toolboxId ?? undefined : undefined);
-  const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId);
-  const { data: systemConfigs = [] } = useSystemConfigs(equipmentToolboxId);
-  const { data: stagedSystems = [] } = useStagedSystems(equipmentToolboxId);
-  const { data: outageLocationNotes } = useOutageLocationNotes(equipmentToolboxId);
+  const isScopedView = mode !== "outage" || Boolean(equipmentToolboxId);
+  const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId, isScopedView);
+  const { data: systemConfigs = [] } = useSystemConfigs(equipmentToolboxId, isScopedView);
+  const { data: stagedSystems = [] } = useStagedSystems(equipmentToolboxId, isScopedView);
+  const { data: outageLocationNotes } = useOutageLocationNotes(equipmentToolboxId, isScopedView);
   const { data: registry } = useQuery({
     queryKey: ["platform-registry"],
     queryFn: api.registry.get,
@@ -4964,6 +4965,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     return <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="text-muted-foreground">Loading...</div>
     </div>;
+  }
+
+  if (isOutageMode && !equipmentToolboxId) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
+        <div className="max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold">Outage toolbox is not configured</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Ask an admin to select a toolbox when starting outage mode. No mixed toolbox data is shown.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
