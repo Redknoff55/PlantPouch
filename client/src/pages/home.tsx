@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   Equipment,
   InsertEquipment,
@@ -3965,6 +3965,30 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   });
   const systemConfigMap = new Map(systemConfigs.map((config) => [config.systemColor, config]));
   const stagedSystemMap = new Map(stagedSystems.map((staged) => [staged.systemColor, staged]));
+  const systemTemplateRequirements = useMemo(() => {
+    if (!templateColor) return [];
+    const configuredRequirements = systemConfigMap.get(templateColor)?.requirements;
+    if (configuredRequirements?.length) return configuredRequirements;
+    return inferRequirementsFromItems(
+      equipment.filter((item) => item.category !== "Computer" && item.systemColor === templateColor)
+    );
+  }, [equipment, systemConfigs, templateColor]);
+  const systemTemplateAssignedItemIds = useMemo(
+    () =>
+      !templateColor
+        ? []
+        : equipment
+            .filter(
+              (item) =>
+                item.category !== "Computer" &&
+                item.systemColor === templateColor &&
+                item.status === "available" &&
+                !item.temporarySystemColor &&
+                !isRepairLocation(item.location)
+            )
+            .map((item) => item.id),
+    [equipment, templateColor]
+  );
 
   const checkedOutGroups = Object.values(
     equipment
@@ -4166,12 +4190,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, []);
 
   useEffect(() => {
-    if (!brandingLoaded) return;
+    if (!brandingLoaded || !brandingDirtyRef.current) return;
     const timeout = setTimeout(() => {
-      api.branding.save(brandingState).catch((error) => {
-        const message = error instanceof Error ? error.message : "Failed to save branding.";
-        toast.error(message);
-      });
+      api.branding
+        .save(brandingState)
+        .then(() => {
+          brandingDirtyRef.current = false;
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : "Failed to save branding.";
+          toast.error(message);
+        });
     }, 400);
     return () => clearTimeout(timeout);
   }, [brandingLoaded, brandingState]);
@@ -4892,6 +4921,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   };
 
   const handleResetBranding = () => {
+    brandingDirtyRef.current = true;
     setBrandingState(branding);
   };
 
@@ -6026,28 +6056,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             isOpen={!!templateColor}
             onClose={() => setTemplateColor(null)}
             systemColor={templateColor}
-            initialRequirements={
-              systemConfigMap.get(templateColor)?.requirements.length
-                ? systemConfigMap.get(templateColor)!.requirements
-                : inferRequirementsFromItems(
-                    equipment.filter(
-                      (item) => item.category !== "Computer" && item.systemColor === templateColor
-                    )
-                  )
-            }
+            initialRequirements={systemTemplateRequirements}
             equipment={equipment}
-            initialAssignedItemIds={
-              equipment
-                .filter(
-                  (item) =>
-                    item.category !== "Computer" &&
-                    item.systemColor === templateColor &&
-                    item.status === "available" &&
-                    !item.temporarySystemColor &&
-                    !isRepairLocation(item.location)
-                )
-                .map((item) => item.id)
-            }
+            initialAssignedItemIds={systemTemplateAssignedItemIds}
             onSave={(requirements, assignedItemIds) =>
               handleSaveSystemTemplate(templateColor, requirements, assignedItemIds)
             }
