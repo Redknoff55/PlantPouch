@@ -3835,7 +3835,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const { data: equipment = [], isLoading } = useEquipment();
   const { data: systemConfigs = [] } = useSystemConfigs();
   const { data: stagedSystems = [] } = useStagedSystems();
-  const { data: outageLocationNotes = [] } = useOutageLocationNotes();
+  const { data: outageLocationNotes } = useOutageLocationNotes();
   const { data: activeOutage = null } = useActiveOutage();
   const adminEnabled = mode === "admin" || mode === "outage";
   const isOutageMode = mode === "outage";
@@ -4236,7 +4236,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   useEffect(() => {
     setBoardNoteDrafts((prev) => {
       const next = { ...prev };
-      outageLocationNotes.forEach((entry) => {
+      (outageLocationNotes ?? []).forEach((entry) => {
         if (typeof next[entry.location] === "undefined") {
           next[entry.location] = entry.note;
         }
@@ -4527,7 +4527,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   );
 
   const outageLocationNoteMap = new Map(
-    outageLocationNotes.map((entry) => [entry.location, entry])
+    (outageLocationNotes ?? []).map((entry) => [entry.location, entry])
   );
   const outageBoardDefaultLocations = activeOutage?.locations ?? [
     "Shop",
@@ -4544,7 +4544,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       ...outageBoardDefaultLocations,
       ...stagedSystems.map((staged) => staged.stagingLocation),
       ...locationOptions.filter((location) => !["Repairs"].includes(location)),
-      ...outageLocationNotes.map((entry) => entry.location),
+      ...(outageLocationNotes ?? []).map((entry) => entry.location),
     ])
   );
   type OutageBoardCard = {
