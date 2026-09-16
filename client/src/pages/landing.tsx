@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { branding } from "@/config/branding";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ClipboardList, Lock, ShieldCheck } from "lucide-react";
+import { Box, ClipboardList, Lock, Package, ShieldCheck, Warehouse as WarehouseIcon } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
 import { useActiveOutage } from "@/lib/hooks";
 import {
@@ -116,6 +117,10 @@ function AdminAccessModal({
 export default function Landing() {
   const [, setLocation] = useLocation();
   const { data: activeOutage = null } = useActiveOutage();
+  const { data: registry, isLoading: isRegistryLoading } = useQuery({
+    queryKey: ["platform-registry"],
+    queryFn: api.registry.get,
+  });
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [brandingState, setBrandingState] = useState<BrandingState>(() => loadBrandingFromStorage());
 
@@ -142,6 +147,15 @@ export default function Landing() {
     saveBrandingToStorage(brandingState);
   }, [brandingState]);
 
+  const enabledWarehouses = (registry?.warehouses ?? []).filter((warehouse) => warehouse.enabled);
+  const enabledToolboxes = (registry?.toolboxes ?? []).filter((toolbox) => toolbox.enabled);
+  const enabledPouches = (registry?.pouches ?? []).filter((pouch) => pouch.enabled);
+  const hasRegistry = enabledWarehouses.length > 0;
+
+  const openPouch = (pouchId: string) => {
+    window.location.href = `/tech?pouch=${encodeURIComponent(pouchId)}`;
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
@@ -165,15 +179,69 @@ export default function Landing() {
         <h1 className="text-3xl font-bold tracking-tight">{brandingState.appName}</h1>
         <p className="text-sm text-muted-foreground mt-2">Tap to check equipment in or out.</p>
 
-        <button
-          className="mt-8 w-full max-w-md rounded-2xl bg-primary text-primary-foreground py-10 text-2xl font-bold shadow-lg shadow-primary/30 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center gap-3"
-          onClick={() => {
-            window.location.href = "/tech";
-          }}
-        >
-          <ShieldCheck className="w-8 h-8" />
-          CHECK IN / OUT
-        </button>
+        {isRegistryLoading ? (
+          <div className="mt-8 text-sm text-muted-foreground">Loading warehouse...</div>
+        ) : hasRegistry ? (
+          <div className="mt-8 w-full max-w-2xl space-y-4 text-left">
+            {enabledWarehouses.map((warehouse) => {
+              const warehouseToolboxes = enabledToolboxes.filter((toolbox) => toolbox.warehouseId === warehouse.id);
+              return (
+                <section key={warehouse.id} className="rounded-2xl border border-border bg-card/80 p-4 shadow-lg">
+                  <div className="mb-3 flex items-center gap-3">
+                    <WarehouseIcon className="h-6 w-6 text-primary" />
+                    <div>
+                      <h2 className="font-semibold">{warehouse.name}</h2>
+                      {warehouse.description && <p className="text-xs text-muted-foreground">{warehouse.description}</p>}
+                    </div>
+                  </div>
+                  {warehouseToolboxes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No toolboxes are enabled.</p>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {warehouseToolboxes.map((toolbox) => {
+                        const toolboxPouches = enabledPouches.filter((pouch) => pouch.toolboxId === toolbox.id);
+                        return (
+                          <div key={toolbox.id} className="rounded-xl border border-border/70 bg-background/50 p-3">
+                            <div className="mb-2 flex items-center gap-2">
+                              <Box className="h-4 w-4 text-primary" />
+                              <h3 className="font-medium">{toolbox.name}</h3>
+                            </div>
+                            {toolboxPouches.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No pouches are enabled.</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {toolboxPouches.map((pouch) => (
+                                  <button
+                                    key={pouch.id}
+                                    className="flex w-full items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-primary/20"
+                                    onClick={() => openPouch(pouch.id)}
+                                  >
+                                    <Package className="h-4 w-4 text-primary" />
+                                    <span>{pouch.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <button
+            className="mt-8 w-full max-w-md rounded-2xl bg-primary py-10 text-2xl font-bold text-primary-foreground shadow-lg shadow-primary/30 transition-all hover:brightness-110 active:scale-[0.99]"
+            onClick={() => {
+              window.location.href = "/tech";
+            }}
+          >
+            <ShieldCheck className="mx-auto mb-3 h-8 w-8" />
+            CHECK IN / OUT
+          </button>
+        )}
 
         {activeOutage && (
           <button
