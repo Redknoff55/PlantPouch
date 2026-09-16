@@ -794,7 +794,8 @@ export async function registerRoutes(
   // Get all systems
   app.get("/api/systems", async (req, res) => {
     try {
-      const systems = await storage.getAllSystems();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const systems = await storage.getAllSystems(toolboxId);
       res.json(systems);
     } catch (error) {
       console.error("Error fetching systems:", error);

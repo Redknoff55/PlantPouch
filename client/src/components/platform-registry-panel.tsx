@@ -130,7 +130,7 @@ export default function PlatformRegistryPanel() {
       await queryClient.invalidateQueries({ queryKey: ["system-configs"] });
       await queryClient.invalidateQueries({ queryKey: ["staged-systems"] });
       await queryClient.invalidateQueries({ queryKey: ["outage-location-notes"] });
-      toast.success(`${claimed.equipment} equipment item(s) and ${claimed.systemConfigs + claimed.stagedSystems + claimed.outageNotes} other resource(s) assigned to ${name}.`);
+      toast.success(`${claimed.equipment} equipment item(s) and ${claimed.systems + claimed.systemConfigs + claimed.stagedSystems + claimed.outageNotes} other resource(s) assigned to ${name}.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to assign equipment.");
     }

@@ -73,12 +73,12 @@ export const api = {
       const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete toolbox");
     },
-    claimUnassignedEquipment: async (toolboxId: string): Promise<{ equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number }> => {
+    claimUnassignedEquipment: async (toolboxId: string): Promise<{ equipment: number; systems: number; systemConfigs: number; stagedSystems: number; outageNotes: number }> => {
       const res = await fetch(`${API_BASE}/toolboxes/${encodeURIComponent(toolboxId)}/claim-equipment`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to assign equipment to toolbox");
-      const result: { claimed: { equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number } } = await res.json();
+      const result: { claimed: { equipment: number; systems: number; systemConfigs: number; stagedSystems: number; outageNotes: number } } = await res.json();
       return result.claimed;
     },
     createPouch: async (data: InsertPouch): Promise<Pouch> => {
@@ -271,8 +271,9 @@ export const api = {
   },
 
   systems: {
-    getAll: async (): Promise<System[]> => {
-      const res = await fetch(`${API_BASE}/systems`);
+    getAll: async (toolboxId?: string): Promise<System[]> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/systems${query}`);
       if (!res.ok) throw new Error('Failed to fetch systems');
       return res.json();
     },

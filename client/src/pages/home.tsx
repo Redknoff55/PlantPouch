@@ -15,6 +15,8 @@ import {
   useCheckin,
   useUpdateEquipment,
   useDeleteEquipment,
+  useSystems,
+  useCreateSystem,
   useSystemConfigs,
   useSaveSystemConfig,
   useStagedSystems,
@@ -481,18 +483,18 @@ function EditEquipmentModal({
             </div>
 
             <div className="space-y-2">
-              <Label>System Color (Optional)</Label>
+              <Label>System Label (Optional)</Label>
               <Select
                 value={formData.systemColor}
                 onValueChange={(val) => setFormData((prev) => ({ ...prev, systemColor: val }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select a system color..." />
+                  <SelectValue placeholder="Select a system label..." />
                 </SelectTrigger>
                 <SelectContent>
                   {systemColorOptions.map((color) => (
                     <SelectItem key={color} value={color}>
-                      {color} System
+                      {color}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1010,6 +1012,7 @@ function SystemCheckoutModal({
   initialValveNumber?: string | null;
 }) {
   const { data: equipment = [] } = useEquipment(toolboxId);
+  const { data: systems = [] } = useSystems(toolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs(toolboxId);
   const checkoutSystem = useCheckoutSystem();
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -1033,21 +1036,12 @@ function SystemCheckoutModal({
     !item.temporarySystemColor;
 
   // Get unique system colors
-  const systemColors = Array.from(new Set(equipment.map(e => e.systemColor).filter(Boolean))) as string[];
-  const computerColors = Array.from(
-    new Set(
-      equipment
-        .filter((item) => item.category === "Computer" && item.systemColor)
-        .map((item) => item.systemColor as string)
-    )
-  );
-  const bagColors = Array.from(
-    new Set(
-      equipment
-        .filter((item) => item.category !== "Computer" && item.systemColor)
-        .map((item) => item.systemColor as string)
-    )
-  );
+  const systemColors = Array.from(new Set([
+    ...systems.map((system) => system.color),
+    ...equipment.map((item) => item.systemColor).filter(Boolean),
+  ])) as string[];
+  const computerColors = systemColors;
+  const bagColors = systemColors;
   const systemLocationSummary = systemColors.map((color) => {
     const items = equipment.filter((item) => {
       if (item.category === "Computer") {
@@ -1960,18 +1954,18 @@ function AddEquipmentModal({
             </div>
 
              <div className="space-y-2">
-              <Label>System Color (Optional)</Label>
+              <Label>System Label (Optional)</Label>
              <Select 
                 value={formData.systemColor} 
                 onValueChange={(val) => setFormData(prev => ({ ...prev, systemColor: val }))}
               >
                   <SelectTrigger>
-                      <SelectValue placeholder="Select a system color..." />
+                      <SelectValue placeholder="Select a system label..." />
                   </SelectTrigger>
                   <SelectContent>
                       {systemColorOptions.map((color) => (
                         <SelectItem key={color} value={color}>
-                          {color} System
+                          {color}
                         </SelectItem>
                       ))}
                   </SelectContent>
@@ -3847,6 +3841,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const { data: activeOutage = null } = useActiveOutage(selectedToolboxId);
   const equipmentToolboxId = selectedToolboxId ?? (mode === "outage" ? activeOutage?.toolboxId ?? undefined : undefined);
   const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId);
+  const { data: systems = [] } = useSystems(equipmentToolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs(equipmentToolboxId);
   const { data: stagedSystems = [] } = useStagedSystems(equipmentToolboxId);
   const { data: outageLocationNotes } = useOutageLocationNotes(equipmentToolboxId);
@@ -3920,6 +3915,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       return [];
     }
   });
+  const [newSystemLabel, setNewSystemLabel] = useState("");
+  const createSystem = useCreateSystem();
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   const activeOutageLocations = activeOutage?.locations ?? [];
@@ -3945,13 +3942,32 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const stageLocationOptions = activeOutageLocations.length > 0
     ? activeOutageLocations
     : locationOptions;
-  const systemColorOptions = Array.from(
+  const equipmentSystemColorOptions = Array.from(
     new Set(
       equipment
         .flatMap((item) => [item.systemColor, item.temporarySystemColor])
         .filter((color): color is string => !!color && color.trim().length > 0)
     )
   );
+  const systemColorOptions = Array.from(new Set([
+    ...systems.map((system) => system.color),
+    ...equipmentSystemColorOptions,
+  ]));
+
+  const handleCreateSystemLabel = () => {
+    const label = newSystemLabel.trim();
+    if (!label) return;
+    createSystem.mutate(
+      { toolboxId: equipmentToolboxId, name: label, color: label },
+      {
+        onSuccess: () => {
+          setNewSystemLabel("");
+          toast.success(`${label} system label added.`);
+        },
+        onError: (error) => toast.error(error.message),
+      }
+    );
+  };
   const categoryOptions = Array.from(
     new Set(equipment.map((item) => item.category).filter((category) => category && category.trim().length > 0))
   ).sort((a, b) => a.localeCompare(b));
@@ -5080,6 +5096,40 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
 
       <main className="max-w-4xl mx-auto p-4 space-y-6">
         {!isOutageMode && canManageEquipment && <PlatformRegistryPanel />}
+
+        {!isOutageMode && canManageEquipment && (
+          <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">System labels</h2>
+              <p className="text-xs text-muted-foreground">
+                Add labels for this toolbox. They will appear in equipment, bulk-edit, and checkout dropdowns.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newSystemLabel}
+                onChange={(event) => setNewSystemLabel(event.target.value)}
+                placeholder={selectedToolboxId ? "e.g. MOV Train 1" : "Select a toolbox first"}
+                disabled={!selectedToolboxId || createSystem.isPending}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") handleCreateSystemLabel();
+                }}
+              />
+              <Button onClick={handleCreateSystemLabel} disabled={!selectedToolboxId || !newSystemLabel.trim() || createSystem.isPending}>
+                Add label
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {systemColorOptions.length === 0 ? (
+                <span className="text-xs text-muted-foreground">No labels yet.</span>
+              ) : (
+                systemColorOptions.map((label) => (
+                  <Badge key={label} variant="secondary">{label}</Badge>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Stats Row */}
         {!isOutageMode && (

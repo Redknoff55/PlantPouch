@@ -111,10 +111,10 @@ export function useCheckin() {
 }
 
 // Systems hooks
-export function useSystems() {
+export function useSystems(toolboxId?: string) {
   return useQuery({
-    queryKey: ['systems'],
-    queryFn: api.systems.getAll,
+    queryKey: ['systems', toolboxId ?? 'all'],
+    queryFn: () => api.systems.getAll(toolboxId),
   });
 }
 

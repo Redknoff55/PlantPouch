@@ -37,7 +37,7 @@ export interface IStorage {
   // Equipment CRUD
   getAllEquipment(toolboxId?: string): Promise<Equipment[]>;
   assignUnscopedEquipment(toolboxId: string): Promise<number>;
-  assignUnscopedResources(toolboxId: string): Promise<{ equipment: number; systemConfigs: number; stagedSystems: number; outageNotes: number }>;
+  assignUnscopedResources(toolboxId: string): Promise<{ equipment: number; systems: number; systemConfigs: number; stagedSystems: number; outageNotes: number }>;
   getEquipment(id: string): Promise<Equipment | undefined>;
   createEquipment(equipment: InsertEquipment): Promise<Equipment>;
   updateEquipment(id: string, updates: Partial<InsertEquipment>): Promise<Equipment | undefined>;
@@ -53,7 +53,7 @@ export interface IStorage {
   getRecentEquipmentHistory(limit: number): Promise<EquipmentHistory[]>;
   
   // Systems CRUD
-  getAllSystems(): Promise<System[]>;
+  getAllSystems(toolboxId?: string): Promise<System[]>;
   createSystem(system: InsertSystem): Promise<System>;
   updateSystem(id: string, updates: Partial<InsertSystem>): Promise<System | undefined>;
   deleteSystem(id: string): Promise<boolean>;
@@ -111,13 +111,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async assignUnscopedResources(toolboxId: string) {
-    const [equipment, systemConfigs, stagedSystems, outageNotes] = await Promise.all([
+    const [equipment, systems, systemConfigs, stagedSystems, outageNotes] = await Promise.all([
       this.assignUnscopedEquipment(toolboxId),
+      db.update(systemsTable).set({ toolboxId }).where(isNull(systemsTable.toolboxId)).returning({ id: systemsTable.id }),
       db.update(systemConfigsTable).set({ toolboxId }).where(isNull(systemConfigsTable.toolboxId)).returning({ id: systemConfigsTable.id }),
       db.update(stagedSystemsTable).set({ toolboxId }).where(isNull(stagedSystemsTable.toolboxId)).returning({ id: stagedSystemsTable.id }),
       db.update(outageLocationNotesTable).set({ toolboxId }).where(isNull(outageLocationNotesTable.toolboxId)).returning({ id: outageLocationNotesTable.id }),
     ]);
-    return { equipment, systemConfigs: systemConfigs.length, stagedSystems: stagedSystems.length, outageNotes: outageNotes.length };
+    return { equipment, systems: systems.length, systemConfigs: systemConfigs.length, stagedSystems: stagedSystems.length, outageNotes: outageNotes.length };
   }
 
   async getEquipment(id: string): Promise<Equipment | undefined> {
@@ -182,8 +183,9 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async getAllSystems(): Promise<System[]> {
-    return await db.select().from(systemsTable);
+  async getAllSystems(toolboxId?: string): Promise<System[]> {
+    if (!toolboxId) return await db.select().from(systemsTable);
+    return await db.select().from(systemsTable).where(eq(systemsTable.toolboxId, toolboxId));
   }
 
   async createSystem(system: InsertSystem): Promise<System> {

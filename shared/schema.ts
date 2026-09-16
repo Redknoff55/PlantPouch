@@ -40,6 +40,7 @@ export const equipment = pgTable("equipment", {
 
 export const systems = pgTable("systems", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   color: text("color").notNull(),
 });
@@ -150,6 +151,10 @@ export const insertEquipmentHistorySchema = createInsertSchema(equipmentHistory)
 
 export const insertSystemSchema = createInsertSchema(systems).omit({
   id: true,
+}).extend({
+  toolboxId: z.string().min(1).optional().nullable(),
+  name: z.string().trim().min(1),
+  color: z.string().trim().min(1),
 });
 
 export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
