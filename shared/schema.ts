@@ -119,7 +119,7 @@ export const outageLocationNotes = pgTable("outage_location_notes", {
 });
 
 export const activeOutage = pgTable("active_outage", {
-  id: varchar("id").primaryKey().default("active"),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   unit: text("unit").notNull(),

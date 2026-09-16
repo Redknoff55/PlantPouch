@@ -9,11 +9,10 @@ import type {
   InsertActiveOutage,
 } from "@shared/schema";
 
-export function useEquipment(toolboxId?: string, enabled = true) {
+export function useEquipment(toolboxId?: string) {
   return useQuery({
     queryKey: ['equipment', toolboxId ?? 'all'],
     queryFn: () => api.equipment.getAll(toolboxId),
-    enabled,
   });
 }
 
@@ -150,11 +149,10 @@ export function useDeleteSystem() {
   });
 }
 
-export function useSystemConfigs(toolboxId?: string, enabled = true) {
+export function useSystemConfigs(toolboxId?: string) {
   return useQuery({
     queryKey: ['system-configs', toolboxId ?? 'all'],
     queryFn: () => api.systemConfigs.getAll(toolboxId),
-    enabled,
   });
 }
 
@@ -169,11 +167,10 @@ export function useSaveSystemConfig(toolboxId?: string) {
   });
 }
 
-export function useStagedSystems(toolboxId?: string, enabled = true) {
+export function useStagedSystems(toolboxId?: string) {
   return useQuery({
     queryKey: ['staged-systems', toolboxId ?? 'all'],
     queryFn: () => api.stagedSystems.getAll(toolboxId),
-    enabled,
   });
 }
 
@@ -200,11 +197,10 @@ export function useClearStagedSystem(toolboxId?: string) {
   });
 }
 
-export function useOutageLocationNotes(toolboxId?: string, enabled = true) {
+export function useOutageLocationNotes(toolboxId?: string) {
   return useQuery({
     queryKey: ['outage-location-notes', toolboxId ?? 'all'],
     queryFn: () => api.outageBoard.getLocationNotes(toolboxId),
-    enabled,
   });
 }
 
@@ -219,10 +215,17 @@ export function useSaveOutageLocationNote(toolboxId?: string) {
   });
 }
 
-export function useActiveOutage() {
+export function useActiveOutage(toolboxId?: string) {
   return useQuery({
-    queryKey: ['active-outage'],
-    queryFn: api.outageBoard.getActive,
+    queryKey: ['active-outage', toolboxId ?? 'unscoped'],
+    queryFn: () => api.outageBoard.getActive(toolboxId),
+  });
+}
+
+export function useActiveOutages() {
+  return useQuery({
+    queryKey: ['active-outages'],
+    queryFn: api.outageBoard.getAllActive,
   });
 }
 
@@ -232,16 +235,18 @@ export function useSaveActiveOutage() {
     mutationFn: (data: InsertActiveOutage) => api.outageBoard.saveActive(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['active-outage'] });
+      queryClient.invalidateQueries({ queryKey: ['active-outages'] });
     },
   });
 }
 
-export function useClearActiveOutage() {
+export function useClearActiveOutage(toolboxId?: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: api.outageBoard.clearActive,
+    mutationFn: () => api.outageBoard.clearActive(toolboxId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['active-outage'] });
+      queryClient.invalidateQueries({ queryKey: ['active-outages'] });
     },
   });
 }

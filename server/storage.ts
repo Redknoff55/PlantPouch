@@ -75,9 +75,10 @@ export interface IStorage {
   upsertOutageLocationNote(note: InsertOutageLocationNote): Promise<OutageLocationNote>;
 
   // Active outage mode
-  getActiveOutage(): Promise<ActiveOutage | undefined>;
+  getAllActiveOutages(): Promise<ActiveOutage[]>;
+  getActiveOutage(toolboxId?: string): Promise<ActiveOutage | undefined>;
   setActiveOutage(outage: InsertActiveOutage): Promise<ActiveOutage>;
-  clearActiveOutage(): Promise<boolean>;
+  clearActiveOutage(toolboxId?: string): Promise<boolean>;
 
   // Warehouse, toolbox, and pouch registry
   getAllWarehouses(): Promise<Warehouse[]>;
@@ -330,13 +331,21 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async getActiveOutage(): Promise<ActiveOutage | undefined> {
-    const result = await db.select().from(activeOutageTable).limit(1);
+  async getAllActiveOutages(): Promise<ActiveOutage[]> {
+    return await db.select().from(activeOutageTable);
+  }
+
+  async getActiveOutage(toolboxId?: string): Promise<ActiveOutage | undefined> {
+    const result = await db
+      .select()
+      .from(activeOutageTable)
+      .where(toolboxId ? eq(activeOutageTable.toolboxId, toolboxId) : isNull(activeOutageTable.toolboxId))
+      .limit(1);
     return result[0];
   }
 
   async setActiveOutage(outage: InsertActiveOutage): Promise<ActiveOutage> {
-    const existing = await this.getActiveOutage();
+    const existing = await this.getActiveOutage(outage.toolboxId ?? undefined);
     if (existing) {
       const result = await db
         .update(activeOutageTable)
@@ -351,16 +360,16 @@ export class DatabaseStorage implements IStorage {
 
     const result = await db
       .insert(activeOutageTable)
-      .values({
-        id: "active",
-        ...outage,
-      })
+      .values(outage)
       .returning();
     return result[0];
   }
 
-  async clearActiveOutage(): Promise<boolean> {
-    const result = await db.delete(activeOutageTable).returning();
+  async clearActiveOutage(toolboxId?: string): Promise<boolean> {
+    const result = await db
+      .delete(activeOutageTable)
+      .where(toolboxId ? eq(activeOutageTable.toolboxId, toolboxId) : isNull(activeOutageTable.toolboxId))
+      .returning();
     return result.length > 0;
   }
 

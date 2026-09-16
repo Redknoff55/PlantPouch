@@ -368,9 +368,15 @@ export const api = {
   },
 
   outageBoard: {
-    getActive: async (): Promise<ActiveOutage | null> => {
-      const res = await fetch(`${API_BASE}/outage-board/active`);
+    getActive: async (toolboxId?: string): Promise<ActiveOutage | null> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/outage-board/active${query}`);
       if (!res.ok) throw new Error('Failed to fetch active outage');
+      return res.json();
+    },
+    getAllActive: async (): Promise<ActiveOutage[]> => {
+      const res = await fetch(`${API_BASE}/outage-board/active/all`);
+      if (!res.ok) throw new Error('Failed to fetch active outages');
       return res.json();
     },
     saveActive: async (data: InsertActiveOutage): Promise<ActiveOutage> => {
@@ -382,8 +388,9 @@ export const api = {
       if (!res.ok) throw new Error('Failed to save active outage');
       return res.json();
     },
-    clearActive: async (): Promise<void> => {
-      const res = await fetch(`${API_BASE}/outage-board/active`, {
+    clearActive: async (toolboxId?: string): Promise<void> => {
+      const query = toolboxId ? `?toolboxId=${encodeURIComponent(toolboxId)}` : "";
+      const res = await fetch(`${API_BASE}/outage-board/active${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to clear active outage');

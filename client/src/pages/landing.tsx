@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Box, ClipboardList, Lock, Package, ShieldCheck, Warehouse as WarehouseIcon } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
-import { useActiveOutage } from "@/lib/hooks";
+import { useActiveOutages } from "@/lib/hooks";
 import {
   applyBrandingToDocument,
   loadBrandingFromStorage,
@@ -116,7 +116,8 @@ function AdminAccessModal({
 
 export default function Landing() {
   const [, setLocation] = useLocation();
-  const { data: activeOutage = null } = useActiveOutage();
+  const { data: activeOutages = [] } = useActiveOutages();
+  const toolboxOutages = activeOutages.filter((outage) => outage.toolboxId);
   const { data: registry, isLoading: isRegistryLoading } = useQuery({
     queryKey: ["platform-registry"],
     queryFn: api.registry.get,
@@ -243,16 +244,30 @@ export default function Landing() {
           </button>
         )}
 
-        {activeOutage && (
-          <button
-            className="mt-4 w-full max-w-md rounded-xl border border-border bg-card py-5 text-base font-semibold shadow-sm hover:bg-muted/50 active:scale-[0.99] transition-all flex items-center justify-center gap-3"
-            onClick={() => {
-              window.location.href = `/outage?toolbox=${encodeURIComponent(activeOutage.toolboxId ?? "")}`;
-            }}
-          >
-            <ClipboardList className="w-5 h-5 text-primary" />
-            {activeOutage.name.toUpperCase()} BOARD
-          </button>
+        {toolboxOutages.length > 0 && (
+          <div className="mt-4 w-full max-w-2xl space-y-2 text-left">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active outage modes</div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {toolboxOutages.map((outage) => {
+                const toolbox = enabledToolboxes.find((entry) => entry.id === outage.toolboxId);
+                return (
+                  <button
+                    key={outage.id}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4 text-left text-base font-semibold shadow-sm transition-all hover:bg-muted/50 active:scale-[0.99]"
+                    onClick={() => {
+                      window.location.href = `/outage?toolbox=${encodeURIComponent(outage.toolboxId ?? "")}`;
+                    }}
+                  >
+                    <ClipboardList className="h-5 w-5 text-primary" />
+                    <span>
+                      <span className="block">Outage Mode ({toolbox?.name ?? "Toolbox"})</span>
+                      <span className="block text-xs font-normal text-muted-foreground">{outage.name}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         )}
       </div>
 

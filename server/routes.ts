@@ -1000,13 +1000,23 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/outage-board/active", async (_req, res) => {
+  app.get("/api/outage-board/active", async (req, res) => {
     try {
-      const activeOutage = await storage.getActiveOutage();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const activeOutage = await storage.getActiveOutage(toolboxId);
       res.json(activeOutage ?? null);
     } catch (error) {
       console.error("Error fetching active outage:", error);
       res.status(500).json({ error: "Failed to fetch active outage" });
+    }
+  });
+
+  app.get("/api/outage-board/active/all", async (_req, res) => {
+    try {
+      res.json(await storage.getAllActiveOutages());
+    } catch (error) {
+      console.error("Error fetching active outages:", error);
+      res.status(500).json({ error: "Failed to fetch active outages" });
     }
   });
 
@@ -1024,9 +1034,10 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/outage-board/active", async (_req, res) => {
+  app.delete("/api/outage-board/active", async (req, res) => {
     try {
-      await storage.clearActiveOutage();
+      const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      await storage.clearActiveOutage(toolboxId);
       res.status(204).send();
     } catch (error) {
       console.error("Error clearing active outage:", error);
