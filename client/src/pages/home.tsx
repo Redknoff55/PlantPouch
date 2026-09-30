@@ -2920,6 +2920,7 @@ function StageSystemModal({
   isOpen,
   onClose,
   systems,
+  bagColors,
   locationOptions,
   initialSystemColor,
   onStage,
@@ -2931,10 +2932,12 @@ function StageSystemModal({
     summary: string;
     missingLabels: string[];
   }>;
+  bagColors: string[];
   locationOptions: string[];
   initialSystemColor?: string | null;
   onStage: (params: {
     systemColor: string;
+    bagColor?: string;
     stagingLocation: string;
     stagedBy: string;
     valveNumber?: string;
@@ -2944,6 +2947,7 @@ function StageSystemModal({
   }) => Promise<void>;
 }) {
   const [systemColor, setSystemColor] = useState("");
+  const [bagColor, setBagColor] = useState("");
   const [stagingLocation, setStagingLocation] = useState("");
   const [customStagingLocation, setCustomStagingLocation] = useState("");
   const [stagedBy, setStagedBy] = useState(() =>
@@ -2958,6 +2962,7 @@ function StageSystemModal({
   useEffect(() => {
     if (!isOpen) return;
     setSystemColor(initialSystemColor ?? "");
+    setBagColor(initialSystemColor && bagColors.includes(initialSystemColor) ? initialSystemColor : "");
     setStagingLocation("");
     setCustomStagingLocation("");
     setValveNumber("");
@@ -2997,6 +3002,7 @@ function StageSystemModal({
 
       await onStage({
         systemColor,
+        bagColor: bagColor || undefined,
         stagingLocation: selectedStagingLocation,
         stagedBy: stagedBy.trim(),
         valveNumber: valveNumber.trim() || undefined,
@@ -3043,7 +3049,10 @@ function StageSystemModal({
                       ? "border-primary bg-primary/5"
                       : "border-border/60 bg-muted/20 hover:border-primary/40"
                   )}
-                  onClick={() => setSystemColor(system.color)}
+                  onClick={() => {
+                    setSystemColor(system.color);
+                    setBagColor(system.color);
+                  }}
                 >
                   <div className="font-semibold">{system.color} System</div>
                   <div className="text-xs text-muted-foreground">{system.summary}</div>
@@ -3055,6 +3064,24 @@ function StageSystemModal({
                 Current gaps: {selectedSystem.missingLabels.join(", ")}
               </div>
             )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>Bag label</Label>
+            <Select value={bagColor || "__none__"} onValueChange={(value) => setBagColor(value === "__none__" ? "" : value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a bag label..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No bag selected</SelectItem>
+                {bagColors.map((color) => (
+                  <SelectItem key={color} value={color}>{color} Bag</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Choose a different bag label when pairing another toolbox system's bag with this computer.
+            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -4366,6 +4393,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
 
   const handleStageSystem = async (params: {
     systemColor: string;
+    bagColor?: string;
     stagingLocation: string;
     stagedBy: string;
     valveNumber?: string;
@@ -4378,6 +4406,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         systemColor: params.systemColor,
         data: {
           systemColor: params.systemColor,
+          bagColor: params.bagColor,
           stagingLocation: params.stagingLocation,
           stagedBy: params.stagedBy,
           valveNumber: params.valveNumber,
@@ -4632,6 +4661,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       color: group.color,
       status: "Staged",
       detail: [
+        staged.bagColor && staged.bagColor !== staged.systemColor ? `${staged.bagColor} bag paired` : null,
         staged.valveNumber ? `Valve ${staged.valveNumber}` : null,
         staged.stagedBy ? `by ${staged.stagedBy}` : null,
         staged.notes || null,
@@ -6164,6 +6194,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               setStageInitialColor(null);
             }}
             systems={stageableSystems}
+            bagColors={bagColorOptions}
             locationOptions={stageLocationOptions}
             initialSystemColor={stageInitialColor}
             onStage={handleStageSystem}

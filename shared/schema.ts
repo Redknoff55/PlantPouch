@@ -95,6 +95,7 @@ export const stagedSystems = pgTable("staged_systems", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   systemColor: text("system_color").notNull(),
+  bagColor: text("bag_color"),
   stagingLocation: text("staging_location").notNull(),
   stagedBy: text("staged_by").notNull(),
   valveNumber: text("valve_number"),
@@ -205,6 +206,7 @@ export const insertStagedSystemSchema = createInsertSchema(stagedSystems).omit({
   updatedAt: true,
 }).extend({
   toolboxId: z.string().min(1).optional().nullable(),
+  bagColor: z.string().trim().min(1).optional().nullable(),
   missingItems: z.array(stagedSystemMissingItemSchema).default([]),
 });
 

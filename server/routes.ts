@@ -912,10 +912,27 @@ export async function registerRoutes(
       const systemItems = allEquipment.filter(
         (item) => (item.temporarySystemColor || item.systemColor) === req.params.color
       );
-      const stageDetails = `${validated.stagedBy} staged ${req.params.color} system at ${validated.stagingLocation}${validated.valveNumber ? ` for valve ${validated.valveNumber}` : ""}${validated.notes ? ` (${validated.notes})` : ""}`;
+      const selectedBagItems = validated.bagColor && validated.bagColor !== req.params.color
+        ? allEquipment.filter(
+            (item) =>
+              item.category !== "Computer" &&
+              item.systemColor === validated.bagColor &&
+              item.status === "available" &&
+              !item.temporarySystemColor &&
+              !["Waiting on Repairs", "Sent for Repairs", "Repairs", "Out for Repair", "Out for Repairs"].includes(item.location ?? "")
+          )
+        : [];
+      const selectedBagItemIds = new Set(selectedBagItems.map((item) => item.id));
+      const itemsToStage = Array.from(
+        new Map([...systemItems, ...selectedBagItems].map((item) => [item.id, item])).values()
+      );
+      const bagDetail = validated.bagColor && validated.bagColor !== req.params.color
+        ? ` with ${validated.bagColor} bag components`
+        : "";
+      const stageDetails = `${validated.stagedBy} staged ${req.params.color} system${bagDetail} at ${validated.stagingLocation}${validated.valveNumber ? ` for valve ${validated.valveNumber}` : ""}${validated.notes ? ` (${validated.notes})` : ""}`;
 
       await Promise.all(
-        systemItems.map((item) =>
+        itemsToStage.map((item) =>
           storage.updateEquipment(item.id, {
             status: "available",
             workOrder: null,
@@ -923,12 +940,13 @@ export async function registerRoutes(
             checkedOutAt: null,
             location: validated.stagingLocation,
             notes: stageDetails,
+            ...(selectedBagItemIds.has(item.id) ? { temporarySystemColor: req.params.color } : {}),
           })
         )
       );
 
       await Promise.all(
-        systemItems.map((item) =>
+        itemsToStage.map((item) =>
           storage.addEquipmentHistory({
             equipmentId: item.id,
             action: "stage",
@@ -951,9 +969,23 @@ export async function registerRoutes(
   app.delete("/api/staged-systems/:color", async (req, res) => {
     try {
       const toolboxId = typeof req.query.toolboxId === "string" ? req.query.toolboxId : undefined;
+      const staged = await storage.getStagedSystem(req.params.color, toolboxId);
       const deleted = await storage.deleteStagedSystem(req.params.color, toolboxId);
       if (!deleted) {
         return res.status(404).json({ error: "Staged system not found" });
+      }
+      if (staged?.bagColor && staged.bagColor !== staged.systemColor) {
+        const pairedBagItems = (await storage.getAllEquipment(toolboxId)).filter(
+          (item) =>
+            item.category !== "Computer" &&
+            item.systemColor === staged.bagColor &&
+            item.temporarySystemColor === staged.systemColor &&
+            item.status === "available" &&
+            item.location === staged.stagingLocation
+        );
+        await Promise.all(
+          pairedBagItems.map((item) => storage.updateEquipment(item.id, { temporarySystemColor: null }))
+        );
       }
       res.status(204).send();
     } catch (error) {
