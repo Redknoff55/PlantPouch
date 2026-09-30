@@ -164,6 +164,25 @@ export const api = {
       return res.json();
     },
 
+    importCsvRow: async (data: InsertEquipment): Promise<{ action: "created" | "updated"; equipment: Equipment }> => {
+      const res = await fetch(`${API_BASE}/equipment/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        let message = "Failed to import equipment";
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep the default error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      return res.json();
+    },
+
     update: async (id: string, data: Partial<InsertEquipment>): Promise<Equipment> => {
       const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}`, {
         method: 'PATCH',

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   Equipment,
   InsertEquipment,
+  Toolbox,
   SystemRequirement,
   StagedSystem,
   StagedSystemMissingItem,
@@ -2200,10 +2201,12 @@ function AdminImportModal({
   isOpen,
   onClose,
   toolboxId,
+  toolboxes,
 }: {
   isOpen: boolean;
   onClose: () => void;
   toolboxId?: string;
+  toolboxes: Toolbox[];
 }) {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<InsertEquipment[]>([]);
@@ -2286,7 +2289,7 @@ function AdminImportModal({
       return;
     }
 
-    const headerValues = parsedRows[0].map((value) => value.toLowerCase());
+    const headerValues = parsedRows[0].map((value) => value.replace(/^\uFEFF/, "").trim().toLowerCase());
     const headerMap = headerValues.reduce<Record<string, number>>((acc, value, index) => {
       acc[value] = index;
       return acc;
@@ -2297,6 +2300,16 @@ function AdminImportModal({
     const dueDateIndex =
       headerMap["due date"] ?? headerMap["duedate"] ?? headerMap["due_date"];
     const locationIndex = headerMap.location ?? headerMap["location"];
+    const originalSystemColorIndex = headerMap.originalsystemcolor ?? headerMap.original_system_color ?? headerMap["original system color"];
+    const temporarySystemColorIndex = headerMap.temporarysystemcolor ?? headerMap.temporary_system_color ?? headerMap["temporary system color"];
+    const replacementIdIndex = headerMap.replacementid ?? headerMap.replacement_id ?? headerMap["replacement id"];
+    const swappedFromIdIndex = headerMap.swappedfromid ?? headerMap.swapped_from_id ?? headerMap["swapped from id"];
+    const statusIndex = headerMap.status;
+    const workOrderIndex = headerMap.workorder ?? headerMap.work_order ?? headerMap["work order"];
+    const checkedOutByIndex = headerMap.checkedoutby ?? headerMap.checked_out_by ?? headerMap["checked out by"];
+    const checkedOutAtIndex = headerMap.checkedoutat ?? headerMap.checked_out_at ?? headerMap["checked out at"];
+    const notesIndex = headerMap.notes;
+    const toolboxIndex = headerMap.toolbox ?? headerMap.toolboxslug ?? headerMap.toolbox_slug ?? headerMap["toolbox slug"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
     const dataRows = hasHeader ? parsedRows.slice(1) : parsedRows;
@@ -2312,6 +2325,7 @@ function AdminImportModal({
       const location = hasHeader ? values[locationIndex ?? -1] : values[5];
       const dueDateRaw = hasHeader ? values[dueDateIndex ?? -1] : values[6];
       const dueDateTrimmed = dueDateRaw?.trim() ?? "";
+      const toolboxValue = hasHeader && toolboxIndex !== undefined ? values[toolboxIndex]?.trim() ?? "" : "";
 
       if (!id || !name || !category) {
         nextErrors.push(`Row ${index + 1}: missing required fields (id, name, category).`);
@@ -2327,17 +2341,52 @@ function AdminImportModal({
         }
         dueDate = parsed;
       }
+      const importedDueDate = dueDateIndex === undefined ? undefined : dueDate ?? null;
+
+      const matchedToolbox = toolboxValue
+        ? toolboxes.find((entry) => entry.slug.toLowerCase() === toolboxValue.toLowerCase() || entry.name.toLowerCase() === toolboxValue.toLowerCase() || entry.id === toolboxValue)
+        : undefined;
+      if (toolboxValue && !matchedToolbox) {
+        nextErrors.push(`Row ${index + 1}: toolbox "${toolboxValue}" does not exist in this instance.`);
+        return;
+      }
+
+      const checkedOutAtRaw = hasHeader ? values[checkedOutAtIndex ?? -1]?.trim() ?? "" : "";
+      let checkedOutAt: Date | null | undefined;
+      if (checkedOutAtRaw) {
+        checkedOutAt = parseDueDateString(checkedOutAtRaw) ?? undefined;
+        if (!checkedOutAt) {
+          nextErrors.push(`Row ${index + 1}: invalid checkedOutAt date.`);
+          return;
+        }
+      } else if (checkedOutAtIndex !== undefined) {
+        checkedOutAt = null;
+      }
+      const readOptional = (columnIndex: number | undefined) =>
+        columnIndex === undefined ? undefined : values[columnIndex]?.trim() || null;
 
       nextRows.push({
         id: id.trim(),
         name: name.trim(),
         category: category.trim(),
-        variant: variant?.trim() || undefined,
-        systemColor: systemColor?.trim() || undefined,
-        originalSystemColor: systemColor?.trim() || undefined,
-        location: location?.trim() || "Shop",
-        dueDate,
-        status: "available"
+        variant: readOptional(variantIndex) ?? (variantIndex === undefined ? undefined : null),
+        systemColor: readOptional(systemColorIndex),
+        originalSystemColor: originalSystemColorIndex === undefined
+          ? readOptional(systemColorIndex)
+          : readOptional(originalSystemColorIndex),
+        temporarySystemColor: readOptional(temporarySystemColorIndex),
+        replacementId: readOptional(replacementIdIndex),
+        swappedFromId: readOptional(swappedFromIdIndex),
+        location: locationIndex === undefined ? undefined : location?.trim() || "Shop",
+        dueDate: importedDueDate,
+        status: statusIndex === undefined ? undefined : values[statusIndex]?.trim() || "available",
+        workOrder: readOptional(workOrderIndex),
+        checkedOutBy: readOptional(checkedOutByIndex),
+        checkedOutAt,
+        notes: readOptional(notesIndex),
+        toolboxId: hasHeader && toolboxIndex !== undefined
+          ? (toolboxValue ? matchedToolbox?.id : null)
+          : toolboxId,
       });
     });
 
@@ -2354,21 +2403,23 @@ function AdminImportModal({
     setIsImporting(true);
     setImportProgress({ completed: 0, total: rows.length });
     const importErrors: string[] = [];
-    let successCount = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
 
     for (let index = 0; index < rows.length; index += 1) {
       const row = rows[index];
       try {
-        await api.equipment.create({ ...row, toolboxId });
-        successCount += 1;
+        const result = await api.equipment.importCsvRow({ ...row, ...(row.toolboxId === undefined ? { toolboxId } : {}) });
+        if (result.action === "created") createdCount += 1;
+        else updatedCount += 1;
       } catch (error) {
         importErrors.push(`${row.id}: ${error instanceof Error ? error.message : "Failed to create"}`);
       }
       setImportProgress({ completed: index + 1, total: rows.length });
     }
 
-    if (successCount > 0) {
-      toast.success(`Imported ${successCount} item(s).`);
+    if (createdCount + updatedCount > 0) {
+      toast.success(`Imported ${createdCount} new item(s) and updated ${updatedCount} existing item(s).`);
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
     }
     if (importErrors.length > 0) {
@@ -2413,8 +2464,9 @@ function AdminImportModal({
           </div>
 
           <div className="space-y-3 text-sm text-muted-foreground">
-            <p>Upload a CSV file with columns: id, name, category, variant (optional), systemColor (optional), location (optional), Due Date (optional, MM/DD/YYYY).</p>
-            <p className="font-mono text-xs text-foreground/70">id,name,category,variant,systemColor,location,Due Date</p>
+            <p>Import creates new equipment and updates matching IDs. A toolbox column routes each row to the matching toolbox slug.</p>
+            <p>For a full snapshot, export with All toolboxes selected. Without a toolbox column, rows go to the currently selected toolbox.</p>
+            <p className="font-mono text-xs text-foreground/70">toolbox,id,name,category,variant,systemColor,location,Due Date</p>
           </div>
 
           <div className="space-y-3">
@@ -4919,12 +4971,18 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   };
 
   const handleExportCsv = () => {
+    const toolboxSlugById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox.slug]));
     const headers = [
+      "toolbox",
       "id",
       "name",
       "category",
       "variant",
       "systemColor",
+      "originalSystemColor",
+      "temporarySystemColor",
+      "replacementId",
+      "swappedFromId",
       "location",
       "Due Date",
       "status",
@@ -4934,11 +4992,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       "notes",
     ];
     const rows = equipment.map((item) => [
+      toolboxSlugById.get(item.toolboxId ?? "") ?? item.toolboxId ?? "",
       item.id,
       item.name,
       item.category,
       item.variant ?? "",
       item.systemColor ?? "",
+      item.originalSystemColor ?? "",
+      item.temporarySystemColor ?? "",
+      item.replacementId ?? "",
+      item.swappedFromId ?? "",
       item.location ?? "Shop",
       formatDueDateValue(item.dueDate),
       item.status,
@@ -6141,6 +6204,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             isOpen={isImportModalOpen}
             onClose={() => setIsImportModalOpen(false)}
             toolboxId={selectedToolboxId}
+            toolboxes={registry?.toolboxes ?? []}
           />
         )}
         {canManageEquipment && isBrandingOpen && (

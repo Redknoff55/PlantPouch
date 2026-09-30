@@ -299,6 +299,47 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/equipment/import", async (req, res) => {
+    try {
+      const payload = { ...req.body } as Partial<InsertEquipment>;
+      for (const field of ["dueDate", "checkedOutAt"] as const) {
+        const input: unknown = req.body?.[field];
+        if (typeof input === "string") {
+          const trimmed = input.trim();
+          if (!trimmed) {
+            payload[field] = null;
+          } else {
+            const parsed = parseDueDateString(trimmed);
+            if (!parsed) {
+              return res.status(400).json({ error: `${field} must be a valid date.` });
+            }
+            payload[field] = parsed;
+          }
+        }
+      }
+
+      const validatedData = insertEquipmentSchema.parse(payload);
+      const existing = await storage.getEquipment(validatedData.id);
+      if (existing) {
+        const equipment = await storage.updateEquipment(existing.id, validatedData);
+        if (!equipment) return res.status(404).json({ error: "Equipment not found" });
+        return res.json({ action: "updated", equipment });
+      }
+
+      const equipment = await storage.createEquipment(validatedData);
+      res.status(201).json({ action: "created", equipment });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+        return res.status(409).json({ error: "Equipment ID already exists; retry the import." });
+      }
+      console.error("Error importing equipment:", error);
+      res.status(500).json({ error: "Failed to import equipment" });
+    }
+  });
+
   // Update equipment
   app.patch("/api/equipment/:id", async (req, res) => {
     try {
