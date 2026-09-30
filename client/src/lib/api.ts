@@ -151,7 +151,16 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error('Failed to create equipment');
+      if (!res.ok) {
+        let message = 'Failed to create equipment';
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep the default error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
       return res.json();
     },
 

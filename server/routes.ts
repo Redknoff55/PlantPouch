@@ -278,10 +278,19 @@ export async function registerRoutes(
           payload.dueDate = parsed;
         }
       }
+      if (typeof payload.id === "string") {
+        const existing = await storage.getEquipment(payload.id.trim());
+        if (existing) {
+          return res.status(409).json({ error: `Equipment ID ${payload.id.trim()} already exists.` });
+        }
+      }
       const validatedData = insertEquipmentSchema.parse(payload);
       const equipment = await storage.createEquipment(validatedData);
       res.status(201).json(equipment);
     } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+        return res.status(409).json({ error: "Equipment ID already exists." });
+      }
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: fromZodError(error).toString() });
       }
