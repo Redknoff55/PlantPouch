@@ -43,6 +43,7 @@ export const systems = pgTable("systems", {
   toolboxId: varchar("toolbox_id").references(() => toolboxes.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   color: text("color").notNull(),
+  isAlwaysAvailable: boolean("is_always_available"),
 });
 
 export const warehouses = pgTable("warehouses", {

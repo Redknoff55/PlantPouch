@@ -18,6 +18,7 @@ import {
   useDeleteEquipment,
   useSystems,
   useCreateSystem,
+  useUpdateSystem,
   useSystemConfigs,
   useSaveSystemConfig,
   useStagedSystems,
@@ -1036,6 +1037,14 @@ function SystemCheckoutModal({
     item.status === "available" &&
     !isRepairLocation(item.location) &&
     !item.temporarySystemColor;
+  const isAlwaysAvailableBag = (item: Equipment) => {
+    if (!item.systemColor) return false;
+    const color = item.systemColor.trim().toLowerCase();
+    const matchesColorAndToolbox = (toolboxId: string | null | undefined) =>
+      systems.find((entry) => entry.toolboxId === toolboxId && entry.color.trim().toLowerCase() === color);
+    const system = matchesColorAndToolbox(item.toolboxId) ?? matchesColorAndToolbox(null);
+    return system?.isAlwaysAvailable ?? system?.color.trim().toLowerCase() === "spare";
+  };
 
   // Get unique system colors
   const systemColors = Array.from(new Set([
@@ -1157,7 +1166,7 @@ function SystemCheckoutModal({
   const isAvailableAtLocation = (item: Equipment) =>
     item.status === "available" &&
     !item.temporarySystemColor &&
-    (item.location || "Shop") === checkoutLocation &&
+    (isAlwaysAvailableBag(item) || (item.location || "Shop") === checkoutLocation) &&
     !isRepairLocation(item.location);
   const combinedItems = [
     ...(selectedComputer
@@ -1287,10 +1296,6 @@ function SystemCheckoutModal({
 
   const handleSubmit = () => {
     if (!workOrder || !techName.trim()) return;
-    if (unresolvedRequiredSlots.length > 0) {
-      toast.error("Resolve all required missing components before checkout.");
-      return;
-    }
     
     // Collect all final IDs to checkout
     const finalIds = Object.values(verifiedItems).filter((id) => !!id);
@@ -1488,12 +1493,13 @@ function SystemCheckoutModal({
                               e.status === 'available' && 
                               e.id !== originalItem?.id &&
                               !e.temporarySystemColor &&
-                              (e.location || "Shop") === checkoutLocation &&
+                              !isRepairLocation(e.location) &&
+                              (isAlwaysAvailableBag(e) || (e.location || "Shop") === checkoutLocation) &&
                               !selectedElsewhere.has(e.id)
                             ).sort((a, b) => {
-                              const aSpare = (a.systemColor || "").trim().toLowerCase() === "spare" ? 0 : 1;
-                              const bSpare = (b.systemColor || "").trim().toLowerCase() === "spare" ? 0 : 1;
-                              if (aSpare !== bSpare) return aSpare - bSpare;
+                              const aAlwaysAvailable = isAlwaysAvailableBag(a) ? 0 : 1;
+                              const bAlwaysAvailable = isAlwaysAvailableBag(b) ? 0 : 1;
+                              if (aAlwaysAvailable !== bAlwaysAvailable) return aAlwaysAvailable - bAlwaysAvailable;
                               return a.id.localeCompare(b.id);
                             });
 
@@ -1559,12 +1565,12 @@ function SystemCheckoutModal({
                                             {replacements.length > 0 ? (
                                               replacements.map(rep => (
                                                   <SelectItem key={rep.id} value={rep.id}>
-                                                      {(rep.systemColor || "").trim().toLowerCase() === "spare" ? "Spare first" : "Other bag"}: {rep.name} ({rep.id})
+                                                    {isAlwaysAvailableBag(rep) ? "Always-available bag" : "Same area"}: {rep.name} ({rep.id}) · {rep.location || "Shop"}
                                                   </SelectItem>
                                               ))
                                             ) : !isAvailable ? (
                                               <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                                                No matching parts available at {checkoutLocation}.
+                                              No matching parts available in an always-available bag or at {checkoutLocation}.
                                               </div>
                                             ) : null}
                                         </SelectContent>
@@ -1614,13 +1620,13 @@ function SystemCheckoutModal({
                   <Button 
                     className="w-full h-12 text-lg font-bold" 
                     onClick={handleSubmit}
-                    disabled={!workOrder || !techName.trim() || !selectedComputerId || unresolvedRequiredSlots.length > 0}
+                    disabled={!workOrder || !techName.trim() || !selectedComputerId}
                   >
                     Check Out System
                   </Button>
                   {unresolvedRequiredSlots.length > 0 && (
                     <p className="text-xs text-amber-600">
-                      Select replacements for all required missing parts before checkout.
+                      {unresolvedRequiredSlots.length} required component(s) will be left out. You can still check out the selected equipment.
                     </p>
                   )}
                </div>
@@ -4026,6 +4032,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   });
   const [newSystemLabel, setNewSystemLabel] = useState("");
   const createSystem = useCreateSystem();
+  const updateSystem = useUpdateSystem();
   
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   const activeOutageLocations = activeOutage?.locations ?? [];
@@ -4079,6 +4086,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
           setNewSystemLabel("");
           toast.success(`${label} system label added.`);
         },
+        onError: (error) => toast.error(error.message),
+      }
+    );
+  };
+  const handleAlwaysAvailableChange = (systemId: string, isAlwaysAvailable: boolean) => {
+    updateSystem.mutate(
+      { id: systemId, isAlwaysAvailable },
+      {
+        onSuccess: () => toast.success("Replacement bag availability updated."),
         onError: (error) => toast.error(error.message),
       }
     );
@@ -5427,6 +5443,45 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 systemColorOptions.map((label) => (
                   <Badge key={label} variant="secondary">{label}</Badge>
                 ))
+              )}
+            </div>
+            <div className="space-y-2 border-t border-border pt-3">
+              <div>
+                <h3 className="text-sm font-semibold">Always-available replacement bags</h3>
+                <p className="text-xs text-muted-foreground">
+                  These bags are offered first for replacements regardless of location. Other bags are limited to the computer’s area.
+                </p>
+              </div>
+              {systems.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Add a system label to designate a replacement bag.</p>
+              ) : (
+                <div className="space-y-2">
+                  {systems.map((system) => {
+                    const isAlwaysAvailable =
+                      system.isAlwaysAvailable ?? system.color.trim().toLowerCase() === "spare";
+                    const toolboxName = registry?.toolboxes.find((toolbox) => toolbox.id === system.toolboxId)?.name
+                      ?? (system.toolboxId ? "Unknown toolbox" : "Unassigned");
+                    return (
+                      <div key={system.id} className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2">
+                        <div>
+                          <div className="text-sm font-medium">{system.name}</div>
+                          <div className="text-xs text-muted-foreground">{toolboxName}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor={`always-available-${system.id}`} className="text-xs text-muted-foreground">
+                            Always available
+                          </Label>
+                          <Switch
+                            id={`always-available-${system.id}`}
+                            checked={isAlwaysAvailable}
+                            disabled={updateSystem.isPending}
+                            onCheckedChange={(checked) => handleAlwaysAvailableChange(system.id, checked)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>
