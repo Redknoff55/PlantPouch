@@ -1014,7 +1014,7 @@ function SystemCheckoutModal({
   initialSystemColor?: string | null;
   initialValveNumber?: string | null;
 }) {
-  const { data: equipment = [] } = useEquipment(toolboxId);
+  const { data: equipment = [] } = useEquipment(toolboxId, isOpen ? 10_000 : false);
   const { data: systems = [] } = useSystems(toolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs(toolboxId);
   const checkoutSystem = useCheckoutSystem();
@@ -1502,6 +1502,18 @@ function SystemCheckoutModal({
                               if (aAlwaysAvailable !== bAlwaysAvailable) return aAlwaysAvailable - bAlwaysAvailable;
                               return a.id.localeCompare(b.id);
                             });
+                        const checkedOutAlternatives = slot.category === "Computer"
+                          ? []
+                          : equipment.filter(e =>
+                              e.category === slot.category &&
+                              getVariantLabel(e.variant) === getVariantLabel(slot.variant) &&
+                              e.status === "checked_out" &&
+                              !selectedElsewhere.has(e.id)
+                            ).sort((a, b) => {
+                              const aColor = (a.temporarySystemColor || a.systemColor || "").toLowerCase();
+                              const bColor = (b.temporarySystemColor || b.systemColor || "").toLowerCase();
+                              return aColor.localeCompare(bColor) || a.id.localeCompare(b.id);
+                            });
 
                         return (
                             <div key={slot.slotId} className="p-4 rounded-lg border border-border bg-card space-y-3">
@@ -1568,11 +1580,26 @@ function SystemCheckoutModal({
                                                     {isAlwaysAvailableBag(rep) ? "Always-available bag" : "Same area"}: {rep.name} ({rep.id}) · {rep.location || "Shop"}
                                                   </SelectItem>
                                               ))
-                                            ) : !isAvailable ? (
+                                            ) : !isAvailable && checkedOutAlternatives.length === 0 ? (
                                               <div className="px-2 py-1.5 text-xs text-muted-foreground">
                                               No matching parts available in an always-available bag or at {checkoutLocation}.
                                               </div>
                                             ) : null}
+                                            {checkedOutAlternatives.map((item) => {
+                                              const activeColor = item.temporarySystemColor || item.systemColor || "Other";
+                                              const valveNumber = extractValveNumber(item.notes);
+                                              const activeJob = [
+                                                `${activeColor}${valveNumber ? ` @ Valve # ${valveNumber}` : ""}`,
+                                                item.checkedOutBy ? `with ${item.checkedOutBy}` : null,
+                                                item.location || "Shop",
+                                                item.workOrder ? `WO ${item.workOrder}` : null,
+                                              ].filter(Boolean).join(" · ");
+                                              return (
+                                                <SelectItem key={`checked-out-${item.id}`} value={`checked-out-${item.id}`} disabled>
+                                                  In use: {item.name} ({item.id}) · {activeJob}
+                                                </SelectItem>
+                                              );
+                                            })}
                                         </SelectContent>
                                     </Select>
 
