@@ -201,6 +201,7 @@ export function useOutageLocationNotes(toolboxId?: string) {
   return useQuery({
     queryKey: ['outage-location-notes', toolboxId ?? 'all'],
     queryFn: () => api.outageBoard.getLocationNotes(toolboxId),
+    refetchInterval: 10_000,
   });
 }
 
@@ -219,6 +220,7 @@ export function useActiveOutage(toolboxId?: string) {
   return useQuery({
     queryKey: ['active-outage', toolboxId ?? 'unscoped'],
     queryFn: () => api.outageBoard.getActive(toolboxId),
+    refetchInterval: 10_000,
   });
 }
 
@@ -226,6 +228,7 @@ export function useActiveOutages() {
   return useQuery({
     queryKey: ['active-outages'],
     queryFn: api.outageBoard.getAllActive,
+    refetchInterval: 10_000,
   });
 }
 

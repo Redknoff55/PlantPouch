@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Box, ClipboardList, Lock, Package, ShieldCheck, Warehouse as WarehouseIcon } from "lucide-react";
+import { Box, ClipboardList, Lock, ShieldCheck, Warehouse as WarehouseIcon } from "lucide-react";
 import { getStoredPin, setAdminUnlocked, setStoredPin } from "@/lib/adminPin";
 import { useActiveOutages } from "@/lib/hooks";
 import {
@@ -150,11 +150,13 @@ export default function Landing() {
 
   const enabledWarehouses = (registry?.warehouses ?? []).filter((warehouse) => warehouse.enabled);
   const enabledToolboxes = (registry?.toolboxes ?? []).filter((toolbox) => toolbox.enabled);
-  const enabledPouches = (registry?.pouches ?? []).filter((pouch) => pouch.enabled);
   const hasRegistry = enabledWarehouses.length > 0;
 
-  const openPouch = (toolboxId: string, pouchId: string) => {
-    window.location.href = `/tech?toolbox=${encodeURIComponent(toolboxId)}&pouch=${encodeURIComponent(pouchId)}`;
+  const openTech = (toolboxId: string) => {
+    window.location.href = `/tech?toolbox=${encodeURIComponent(toolboxId)}`;
+  };
+  const openOutage = (toolboxId: string) => {
+    window.location.href = `/outage?toolbox=${encodeURIComponent(toolboxId)}`;
   };
 
   return (
@@ -200,29 +202,32 @@ export default function Landing() {
                   ) : (
                     <div className="grid gap-3 sm:grid-cols-2">
                       {warehouseToolboxes.map((toolbox) => {
-                        const toolboxPouches = enabledPouches.filter((pouch) => pouch.toolboxId === toolbox.id);
+                        const activeOutage = toolboxOutages.find((outage) => outage.toolboxId === toolbox.id);
                         return (
                           <div key={toolbox.id} className="rounded-xl border border-border/70 bg-background/50 p-3">
                             <div className="mb-2 flex items-center gap-2">
                               <Box className="h-4 w-4 text-primary" />
                               <h3 className="font-medium">{toolbox.name}</h3>
                             </div>
-                            {toolboxPouches.length === 0 ? (
-                              <p className="text-xs text-muted-foreground">No pouches are enabled.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {toolboxPouches.map((pouch) => (
-                                  <button
-                                    key={pouch.id}
-                                    className="flex w-full items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-primary/20"
-                                    onClick={() => openPouch(toolbox.id, pouch.id)}
-                                  >
-                                    <Package className="h-4 w-4 text-primary" />
-                                    <span>{pouch.name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
+                            <div className="grid gap-2">
+                              <button
+                                className="flex w-full items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-left text-sm font-semibold transition-colors hover:bg-primary/20"
+                                onClick={() => openTech(toolbox.id)}
+                              >
+                                <ShieldCheck className="h-4 w-4 text-primary" />
+                                <span>CHECK IN / OUT</span>
+                              </button>
+                              {activeOutage && (
+                                <button
+                                  className="flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-left text-sm font-semibold transition-colors hover:bg-amber-500/20"
+                                  onClick={() => openOutage(toolbox.id)}
+                                >
+                                  <ClipboardList className="h-4 w-4 text-amber-600" />
+                                  <span>OUTAGE MODE</span>
+                                  <span className="ml-auto text-xs font-normal text-muted-foreground">{activeOutage.name}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })}
@@ -244,31 +249,6 @@ export default function Landing() {
           </button>
         )}
 
-        {toolboxOutages.length > 0 && (
-          <div className="mt-4 w-full max-w-2xl space-y-2 text-left">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Active outage modes</div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {toolboxOutages.map((outage) => {
-                const toolbox = enabledToolboxes.find((entry) => entry.id === outage.toolboxId);
-                return (
-                  <button
-                    key={outage.id}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4 text-left text-base font-semibold shadow-sm transition-all hover:bg-muted/50 active:scale-[0.99]"
-                    onClick={() => {
-                      window.location.href = `/outage?toolbox=${encodeURIComponent(outage.toolboxId ?? "")}`;
-                    }}
-                  >
-                    <ClipboardList className="h-5 w-5 text-primary" />
-                    <span>
-                      <span className="block">Outage Mode ({toolbox?.name ?? "Toolbox"})</span>
-                      <span className="block text-xs font-normal text-muted-foreground">{outage.name}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="pb-6 flex items-center justify-center">

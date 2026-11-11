@@ -204,6 +204,25 @@ export const api = {
       return res.json();
     },
 
+    moveToLocation: async (id: string, location: string, details?: string): Promise<Equipment> => {
+      const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}/move`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location, details }),
+      });
+      if (!res.ok) {
+        let message = "Failed to move equipment";
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep the default error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      return res.json();
+    },
+
     delete: async (id: string): Promise<void> => {
       const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}`, {
         method: 'DELETE',

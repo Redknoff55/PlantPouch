@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { 
+  ArrowLeft,
   Search, 
   AlertTriangle, 
   Wrench, 
@@ -3915,8 +3916,34 @@ function ActivityLogModal({
 }
 
 export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "outage" }) {
-  const selectedToolboxId =
-    typeof window === "undefined" ? undefined : new URLSearchParams(window.location.search).get("toolbox") ?? undefined;
+  const searchParams = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+  const selectedToolboxId = searchParams?.get("toolbox") ??
+    (typeof window === "undefined" ? null : window.sessionStorage.getItem("plantpouch-admin-toolbox")) ??
+    undefined;
+  type AdminSection = "overview" | "inventory" | "systems" | "outage" | "activity" | "setup";
+  const adminSections: Array<{ id: AdminSection; title: string; description: string; icon: typeof Box }> = [
+    { id: "inventory", title: "Inventory", description: "Find equipment, filter by location, and update items.", icon: PackageCheck },
+    { id: "systems", title: "Systems", description: "See ready, staged, repair, and borrowed components.", icon: ClipboardList },
+    { id: "outage", title: "Outage board", description: "Manage shutdown work and track equipment through outage locations.", icon: MapPin },
+    { id: "activity", title: "Activity", description: "Review recent check-in and check-out activity.", icon: History },
+    { id: "setup", title: "Admin setup", description: "Manage toolboxes, labels, imports, and app settings.", icon: Settings },
+  ];
+  const getInitialAdminSection = (): AdminSection => {
+    if (typeof window === "undefined") return "overview";
+    const section = new URLSearchParams(window.location.search).get("section");
+    return adminSections.some((entry) => entry.id === section) ? section as AdminSection : "overview";
+  };
+  const [adminSection, setAdminSection] = useState<AdminSection>(getInitialAdminSection);
+  const navigateAdminSection = (section: AdminSection) => {
+    setAdminSection(section);
+    const params = new URLSearchParams(window.location.search);
+    if (section === "overview") params.delete("section");
+    else params.set("section", section);
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  };
+  const isAdminDashboard = mode === "admin";
+  const showAdminSection = (section: AdminSection) => isAdminDashboard && adminSection === section;
   const { data: activeOutage = null } = useActiveOutage(selectedToolboxId);
   const equipmentToolboxId = selectedToolboxId ?? (mode === "outage" ? activeOutage?.toolboxId ?? undefined : undefined);
   const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId);
@@ -3953,6 +3980,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [searchTerm, setSearchTerm] = useState("");
   const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
+  const [inventoryLocationFilter, setInventoryLocationFilter] = useState("All");
   const [bagPreviewColor, setBagPreviewColor] = useState("none");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -3967,24 +3995,26 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [isReturnsOpen, setIsReturnsOpen] = useState(false);
   const [isDueDatesOpen, setIsDueDatesOpen] = useState(false);
   const [isActivityOpen, setIsActivityOpen] = useState(false);
-  const [recentHistory, setRecentHistory] = useState<Array<{
-    id: string;
-    equipmentId: string;
-    action: string;
-    timestamp: string;
-    details?: string | null;
-    workOrder?: string | null;
-  }>>([]);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const isActivityVisible = isActivityOpen || adminSection === "activity";
+  const {
+    data: historyEntries = [],
+    isLoading: isHistoryLoading,
+    isError: isHistoryError,
+  } = useQuery({
+    queryKey: ["equipment-history-recent", selectedToolboxId],
+    queryFn: () => api.equipment.getRecentHistory(25),
+    enabled: isActivityVisible,
+    refetchInterval: isActivityVisible ? 10_000 : false,
+  });
+  const equipmentIds = new Set(equipment.map((item) => item.id));
+  const recentHistory = historyEntries.filter(
+    (entry) => !selectedToolboxId || equipmentIds.has(entry.equipmentId)
+  );
   const [locationFilter, setLocationFilter] = useState("Shop");
   const [boardNoteDrafts, setBoardNoteDrafts] = useState<Record<string, string>>({});
+  const syncedBoardNotesRef = useRef<Record<string, string>>({});
   const [outageMoveColor, setOutageMoveColor] = useState("");
   const [outageMoveLocation, setOutageMoveLocation] = useState("");
-  const [outageMoveBy, setOutageMoveBy] = useState(() =>
-    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
-  );
-  const [outageMoveNotes, setOutageMoveNotes] = useState("");
-  const [outageToolboxId, setOutageToolboxId] = useState("");
   const [customLocations, setCustomLocations] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     try {
@@ -4005,6 +4035,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     total: equipment.length,
     out: equipment.filter(e => e.status === 'checked_out').length,
     broken: equipment.filter((item) => isRepairLocation(item.location)).length,
+    available: equipment.filter((item) => item.status === "available" && !isRepairLocation(item.location)).length,
+    calibrationDue: equipment.filter((item) => {
+      const status = getDueDateStatus(item.dueDate);
+      return status === "yellow" || status === "red";
+    }).length,
+    calibrationOverdue: equipment.filter((item) => getDueDateStatus(item.dueDate) === "red").length,
   };
 
   const locationOptions = Array.from(
@@ -4343,58 +4379,30 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, [activeOutage?.unit]);
 
   useEffect(() => {
-    if (activeOutage?.toolboxId) {
-      setOutageToolboxId(activeOutage.toolboxId);
-    }
-  }, [activeOutage?.toolboxId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    localStorage.setItem("plantpouch-tech-name", outageMoveBy);
-  }, [outageMoveBy]);
-
-  useEffect(() => {
     setBoardNoteDrafts((prev) => {
       const next = { ...prev };
-      (outageLocationNotes ?? []).forEach((entry) => {
-        if (typeof next[entry.location] === "undefined") {
-          next[entry.location] = entry.note;
+      const savedNotes = new Map((outageLocationNotes ?? []).map((entry) => [entry.location, entry.note]));
+      const locations = new Set([
+        ...outageBoardDefaultLocations,
+        ...(outageLocationNotes ?? []).map((entry) => entry.location),
+      ]);
+      locations.forEach((location) => {
+        const savedNote = savedNotes.get(location) ?? "";
+        const hadPreviousValue = Object.prototype.hasOwnProperty.call(syncedBoardNotesRef.current, location);
+        const previousSavedNote = syncedBoardNotesRef.current[location];
+        if (!hadPreviousValue || next[location] === previousSavedNote) {
+          next[location] = savedNote;
         }
-      });
-      outageBoardDefaultLocations.forEach((location) => {
-        if (typeof next[location] === "undefined") {
-          next[location] = "";
-        }
+        syncedBoardNotesRef.current[location] = savedNote;
       });
       return next;
     });
-  }, [outageLocationNotes]);
+  }, [outageLocationNotes, activeOutage?.unit]);
 
   useEffect(() => {
-    if (!isActivityOpen) return;
-    let active = true;
-    setIsHistoryLoading(true);
-    api.equipment
-      .getRecentHistory(10)
-      .then((entries) => {
-        if (!active) return;
-        const filtered = entries.filter((entry) =>
-          entry.action === "system_check_in" || entry.action === "system_check_out"
-        );
-        setRecentHistory(filtered.slice(0, 5));
-      })
-      .catch(() => {
-        if (!active) return;
-        toast.error("Failed to load activity log.");
-      })
-      .finally(() => {
-        if (!active) return;
-        setIsHistoryLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [isActivityOpen]);
+    if (mode !== "admin" || !selectedToolboxId) return;
+    window.sessionStorage.setItem("plantpouch-admin-toolbox", selectedToolboxId);
+  }, [mode, selectedToolboxId]);
 
   const handleAddLocation = (value: string) => {
     const trimmed = value.trim();
@@ -4412,12 +4420,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       if (affectedItems.length > 0) {
         await Promise.all(
           affectedItems.map((item) =>
-            api.equipment.update(item.id, { location: "Shop" })
+            api.equipment.moveToLocation(item.id, "Shop", `Moved from ${trimmed} to Shop when the location was removed.`)
           )
         );
       }
       setCustomLocations((prev) => prev.filter((location) => location !== trimmed));
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["equipment-history-recent"] });
       toast.success(`${trimmed} removed. ${affectedItems.length} item(s) moved to Shop.`);
       if (locationFilter === trimmed) {
         setLocationFilter("Shop");
@@ -4432,10 +4441,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     try {
       await Promise.all(
         itemIds.map((id) =>
-          api.equipment.update(id, { location })
+          api.equipment.moveToLocation(
+            id,
+            location,
+            `Moved ${id} to ${location} from the admin inventory.`
+          )
         )
       );
       queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      queryClient.invalidateQueries({ queryKey: ["equipment-history-recent"] });
       toast.success(`Transferred ${itemIds.length} item(s) to ${location}.`);
       setIsTransferOpen(false);
     } catch {
@@ -4476,31 +4490,37 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   };
 
   const handleAdminOutageMove = async () => {
-    const movedBy = outageMoveBy.trim();
     if (!activeOutage) {
       toast.error("Set outage mode before moving systems on the outage board.");
       return;
     }
-    if (!outageMoveColor || !outageMoveLocation || !movedBy) {
-      toast.error("Choose a system, outage location, and moved by name.");
+    if (!outageMoveColor || !outageMoveLocation) {
+      toast.error("Choose a system and outage location.");
+      return;
+    }
+    const itemsToMove = equipment.filter(
+      (item) =>
+        (item.temporarySystemColor || item.systemColor) === outageMoveColor &&
+        item.status === "available" &&
+        !isRepairLocation(item.location)
+    );
+    if (itemsToMove.length === 0) {
+      toast.error(`No available ${outageMoveColor} equipment to move.`);
       return;
     }
     try {
-      await saveStagedSystem.mutateAsync({
-        systemColor: outageMoveColor,
-        data: {
-          systemColor: outageMoveColor,
-          stagingLocation: outageMoveLocation,
-          stagedBy: movedBy,
-          notes: outageMoveNotes.trim() || undefined,
-          missingItems: [],
-          sourceWorkOrder: null,
-        },
-      });
-      setOutageMoveNotes("");
-      toast.success(`${outageMoveColor} moved to ${outageMoveLocation}.`);
+      await Promise.all(itemsToMove.map((item) =>
+        api.equipment.moveToLocation(
+          item.id,
+          outageMoveLocation,
+          `Moved ${item.id} (${outageMoveColor} System) to ${outageMoveLocation} during ${activeOutage.name}.`
+        )
+      ));
+      await queryClient.invalidateQueries({ queryKey: ["equipment"] });
+      await queryClient.invalidateQueries({ queryKey: ["equipment-history-recent"] });
+      toast.success(`${itemsToMove.length} ${outageMoveColor} item(s) moved to ${outageMoveLocation}. Their location will remain there after the outage ends.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to move system on outage board.");
+      toast.error(error instanceof Error ? error.message : "Failed to update equipment locations.");
     }
   };
 
@@ -4516,12 +4536,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const handleSetOutagePreset = async (unit: string) => {
     const preset = outagePresets.find((entry) => entry.unit === unit);
     if (!preset) return;
-    if (!outageToolboxId) {
-      toast.error("Choose a toolbox before starting outage mode.");
+    if (!selectedToolboxId) {
+      toast.error("Choose a toolbox in the header before starting outage mode.");
       return;
     }
     try {
-      await saveActiveOutage.mutateAsync({ ...preset, toolboxId: outageToolboxId });
+      await saveActiveOutage.mutateAsync({ ...preset, toolboxId: selectedToolboxId });
       setCustomLocations((prev) => {
         const next = new Set(prev);
         preset.locations.forEach((location) => {
@@ -4531,6 +4551,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         });
         return Array.from(next);
       });
+      navigateAdminSection("outage");
       toast.success(`${preset.name} mode active.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to set outage mode.");
@@ -4676,6 +4697,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   type OutageBoardCard = {
     key: string;
     color: string;
+    title?: string;
     status: string;
     detail: string;
     badgeVariant: "default" | "secondary" | "outline" | "destructive";
@@ -4689,22 +4711,30 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   }, {} as Record<string, OutageBoardCard[]>);
 
   availableSystemItems.forEach((group) => {
+    const shopItems = group.items.filter((item) => getLocation(item) === "Shop");
+    if (shopItems.length === 0) return;
     outageCardsByLocation.Shop.push({
       key: `ready-${group.color}`,
       color: group.color,
       status: "Ready in Shop",
-      detail: `${group.effectiveAvailableCount}/${group.expectedCount} required components ready`,
+      detail: `${shopItems.length} component${shopItems.length === 1 ? "" : "s"} physically in Shop`,
       badgeVariant: group.missingRequirements.length === 0 ? "default" : "secondary",
       missingLabels: group.missingRequirements.map(
         (requirement) => `${requirement.missing} x ${requirement.variant} ${requirement.category}`
       ),
-      items: group.items,
+      items: shopItems,
       action: "stage",
     });
   });
 
   stagedSystemItems.forEach((group) => {
     const staged = group.staged as StagedSystem;
+    const alreadyLocatedAtOutageSite = !!activeOutage?.locations.includes(staged.stagingLocation) &&
+      equipment.some((item) =>
+        (item.temporarySystemColor || item.systemColor) === group.color &&
+        getLocation(item) === staged.stagingLocation
+      );
+    if (alreadyLocatedAtOutageSite) return;
     if (!outageCardsByLocation[staged.stagingLocation]) {
       outageCardsByLocation[staged.stagingLocation] = [];
     }
@@ -4727,6 +4757,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       ],
       items: group.items,
       action: "clear",
+    });
+  });
+
+  activeOutage?.locations.forEach((location) => {
+    const equipmentAtLocation = equipment.filter((item) => getLocation(item) === location);
+    const itemsBySystem = equipmentAtLocation.reduce((groups, item) => {
+      const color = item.temporarySystemColor || item.systemColor || "Unassigned";
+      (groups[color] ??= []).push(item);
+      return groups;
+    }, {} as Record<string, Equipment[]>);
+    Object.entries(itemsBySystem).forEach(([color, items]) => {
+      outageCardsByLocation[location].push({
+        key: `inventory-${location}-${color}`,
+        color,
+        title: color === "Unassigned" ? `${items.length} unassigned item${items.length === 1 ? "" : "s"}` : `${color} System`,
+        status: "At location",
+        detail: `${items.length} equipment item${items.length === 1 ? "" : "s"} recorded at ${location}`,
+        badgeVariant: "outline",
+        missingLabels: [],
+        items: sortEquipmentById(items),
+      });
     });
   });
 
@@ -4801,6 +4852,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
 
   const inventorySource = canManageEquipment ? filteredEquipment : equipment;
   const inventoryFiltered = inventorySource.filter((item) => {
+    if (inventoryLocationFilter !== "All" && getLocation(item) !== inventoryLocationFilter) return false;
     if (inventoryColorFilter === "All") return true;
     if (inventoryColorFilter === "Needs Cal") {
       const status = getDueDateStatus(item.dueDate);
@@ -5078,9 +5130,20 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   return (
     <div className="min-h-screen bg-background text-foreground pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-30 bg-background/80 backdrop-blur border-b border-border p-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
+                {isAdminDashboard && adminSection !== "overview" && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigateAdminSection("overview")}
+                    aria-label="Back to admin overview"
+                    title="Back to overview"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Button>
+                )}
                 <div
                   className={cn(
                     "w-10 h-10 rounded flex items-center justify-center text-xl overflow-hidden",
@@ -5106,18 +5169,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 </div>
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
                 {mode === "admin" && (
                   <select
                     className="h-10 max-w-40 rounded-md border border-input bg-background px-2 text-sm"
                     value={selectedToolboxId ?? ""}
                     onChange={(event) => {
                       const nextToolboxId = event.target.value;
-                      window.location.href = nextToolboxId
-                        ? `/admin?toolbox=${encodeURIComponent(nextToolboxId)}`
-                        : "/admin";
+                      const params = new URLSearchParams(window.location.search);
+                      params.delete("section");
+                      if (nextToolboxId) {
+                        window.sessionStorage.setItem("plantpouch-admin-toolbox", nextToolboxId);
+                        params.set("toolbox", nextToolboxId);
+                      } else {
+                        window.sessionStorage.removeItem("plantpouch-admin-toolbox");
+                        params.delete("toolbox");
+                      }
+                      const query = params.toString();
+                      window.location.href = `/admin${query ? `?${query}` : ""}`;
                     }}
-                    aria-label="Filter admin by toolbox"
+                    aria-label="Choose toolbox for this admin visit"
+                    title="Toolbox for this visit"
                   >
                     <option value="">All toolboxes</option>
                     {enabledToolboxes.map((toolbox) => (
@@ -5125,60 +5197,72 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                     ))}
                   </select>
                 )}
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => setIsActivityOpen(true)}
-                  data-testid="button-activity-log"
-                >
-                  <History className="w-5 h-5" />
-                </Button>
-                {canManageEquipment && !isOutageMode && (
+                {isAdminDashboard && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0"
+                    onClick={() => navigateAdminSection("activity")}
+                    data-testid="button-activity-log"
+                    aria-label="Open activity log"
+                    title="Activity log"
+                  >
+                    <History className="w-5 h-5" />
+                  </Button>
+                )}
+                {canManageEquipment && !isOutageMode && showAdminSection("setup") && (
                   <Button
                     variant="outline"
                     size="icon"
                     className="shrink-0 border-blue-500/30 text-blue-500 hover:bg-blue-500/10"
                     onClick={() => setIsImportModalOpen(true)}
                     data-testid="button-csv-import"
+                    aria-label="Import equipment from CSV"
+                    title="Import CSV"
                   >
                     <Upload className="w-5 h-5" />
                   </Button>
                 )}
-                {adminEnabled && !isOutageMode && (
+                {adminEnabled && !isOutageMode && (!isAdminDashboard || showAdminSection("inventory")) && (
                   <Button
                     variant="outline"
                     size="icon"
                     className="shrink-0"
                     onClick={handleExportCsv}
                     data-testid="button-export-csv"
+                    aria-label="Export equipment to CSV"
+                    title="Export CSV"
                   >
                     <Download className="w-5 h-5" />
                   </Button>
                 )}
-                {canManageEquipment && !isOutageMode && (
+                {canManageEquipment && !isOutageMode && showAdminSection("setup") && (
                   <Button
                     variant="outline"
                     size="icon"
                     className="shrink-0 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
                     onClick={() => setIsBrandingOpen(true)}
                     data-testid="button-branding"
+                    aria-label="Customize app branding"
+                    title="Branding"
                   >
                     <Image className="w-5 h-5" />
                   </Button>
                 )}
-                {canManageEquipment && !isOutageMode && (
-                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment">
+                {canManageEquipment && !isOutageMode && (!isAdminDashboard || showAdminSection("inventory")) && (
+                  <Button variant="outline" size="icon" className="shrink-0" onClick={() => setIsAddModalOpen(true)} data-testid="button-add-equipment" aria-label="Add equipment" title="Add equipment">
                      <Plus className="w-5 h-5" />
                   </Button>
                 )}
-                {adminEnabled && !isOutageMode && (
+                {adminEnabled && !isOutageMode && showAdminSection("setup") && (
                   <Button 
                     variant={isAdminMode ? "default" : "outline"}
                     size="icon" 
                     className={cn("shrink-0", isAdminMode && "bg-amber-500 hover:bg-amber-600")}
                     onClick={() => setIsAdminMode(!isAdminMode)}
                     data-testid="button-toggle-admin"
+                    aria-label={isAdminMode ? "Disable admin tools" : "Enable admin tools"}
+                    title={isAdminMode ? "Disable admin tools" : "Enable admin tools"}
                   >
                      <Settings className="w-5 h-5" />
                   </Button>
@@ -5187,10 +5271,134 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-4 space-y-6">
-        {!isOutageMode && canManageEquipment && <PlatformRegistryPanel />}
+      <main className="mx-auto max-w-6xl space-y-5 p-4 sm:p-6">
+        {isAdminDashboard && adminSection !== "overview" && (
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary">Admin workspace</p>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {adminSections.find((section) => section.id === adminSection)?.title}
+              </h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {selectedToolboxId
+                ? enabledToolboxes.find((toolbox) => toolbox.id === selectedToolboxId)?.name ?? "Selected toolbox"
+                : "All toolboxes"}
+            </p>
+          </div>
+        )}
 
-        {!isOutageMode && canManageEquipment && (
+        {!isOutageMode && (!isAdminDashboard || showAdminSection("overview")) && (
+          <section aria-labelledby="inventory-overview-title" className="space-y-3">
+            <div>
+              {isAdminDashboard ? (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-primary">Admin workspace</p>
+                  <h2 id="inventory-overview-title" className="text-2xl font-semibold tracking-tight">Overview</h2>
+                  <p className="text-sm text-muted-foreground">What is available, where it is, and what needs attention.</p>
+                </>
+              ) : (
+                <>
+                  <h2 id="inventory-overview-title" className="text-base font-semibold tracking-tight">Inventory overview</h2>
+                  <p className="text-sm text-muted-foreground">A quick look at equipment status.</p>
+                </>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 shadow-sm sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">Available</span>
+                  <PackageCheck className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden="true" />
+                </div>
+                <span className="mt-2 block font-mono text-2xl font-bold tracking-tight text-emerald-500 sm:text-3xl">{stats.available}</span>
+              </div>
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 shadow-sm sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">Checked out</span>
+                  <PackageCheck className="h-4 w-4 shrink-0 text-blue-500" aria-hidden="true" />
+                </div>
+                <span className="mt-2 block font-mono text-2xl font-bold tracking-tight text-blue-500 sm:text-3xl">{stats.out}</span>
+              </div>
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 shadow-sm sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">Repair queue</span>
+                  <Wrench className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+                </div>
+                <span className="mt-2 block font-mono text-2xl font-bold tracking-tight text-destructive sm:text-3xl">{stats.broken}</span>
+              </div>
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 shadow-sm sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">Calibration due</span>
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+                </div>
+                <span className="mt-2 block font-mono text-2xl font-bold tracking-tight text-amber-500 sm:text-3xl">{stats.calibrationDue}</span>
+                {stats.calibrationOverdue > 0 && (
+                  <span className="text-[10px] text-destructive">{stats.calibrationOverdue} due within 1 month</span>
+                )}
+              </div>
+              <div className="rounded-xl border border-border bg-card p-3 shadow-sm sm:p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs">Total items</span>
+                  <Box className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                </div>
+                <span className="mt-2 block font-mono text-2xl font-bold tracking-tight sm:text-3xl">{stats.total}</span>
+              </div>
+            </div>
+
+            {isAdminDashboard && (
+              <div className="space-y-3 pt-2">
+                <div>
+                  <h3 className="text-base font-semibold tracking-tight">Work areas</h3>
+                  <p className="text-sm text-muted-foreground">Go straight to the part of PlantPouch you need.</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {adminSections.map((section) => {
+                    const SectionIcon = section.icon;
+                    return (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => navigateAdminSection(section.id)}
+                        className="group flex min-h-24 items-start gap-3 rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/30"
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <SectionIcon className="h-5 w-5" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-2 font-semibold group-hover:text-primary">
+                            {section.title}
+                            {section.id === "outage" && activeOutage && (
+                              <Badge variant="default" className="h-5 px-1.5 text-[9px]">Active</Badge>
+                            )}
+                          </span>
+                          <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{section.description}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {isAdminDashboard && activeOutage && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/10 p-4">
+                <div>
+                  <div className="flex items-center gap-2 font-semibold">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+                    {activeOutage.name} outage active
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {activeOutage.locations.length} outage locations. Equipment stays at its last recorded location when the outage ends.
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => navigateAdminSection("outage")}>Open outage board</Button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {!isOutageMode && canManageEquipment && showAdminSection("setup") && <PlatformRegistryPanel />}
+
+        {!isOutageMode && canManageEquipment && showAdminSection("setup") && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">System labels</h2>
@@ -5224,25 +5432,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
           </div>
         )}
 
-        {/* Stats Row */}
-        {!isOutageMode && (
-        <div className="grid grid-cols-3 gap-4">
-            <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
-                <span className="block text-3xl font-bold font-mono text-blue-500">{stats.out}</span>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Active</span>
-            </div>
-            <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
-                <span className="block text-3xl font-bold font-mono text-destructive">{stats.broken}</span>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Repairs</span>
-            </div>
-             <div className="bg-card border border-border rounded-lg p-3 text-center shadow-sm">
-                <span className="block text-3xl font-bold font-mono">{stats.total}</span>
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total</span>
-            </div>
-        </div>
-        )}
-
-        {!isOutageMode && canManageEquipment && (
+        {!isOutageMode && canManageEquipment && showAdminSection("outage") && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -5272,21 +5462,9 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                   : "Choose a preset when an outage starts. This does not move systems by itself."}
               </div>
             </div>
-            <div className="space-y-2">
-              <Label>Toolbox for this outage</Label>
-              <Select value={outageToolboxId} onValueChange={setOutageToolboxId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose AOV, MOV, or another toolbox..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {enabledToolboxes.map((toolbox) => (
-                    <SelectItem key={toolbox.id} value={toolbox.id}>
-                      {toolbox.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              This outage uses the toolbox selected in the header. Starting an outage opens its board; equipment moves are recorded as regular inventory locations.
+            </p>
             <div className="grid gap-2 sm:grid-cols-3">
               {outagePresets.map((preset) => (
                 <Button
@@ -5294,7 +5472,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                   variant={activeOutage?.unit === preset.unit ? "default" : "outline"}
                   size="sm"
                   onClick={() => handleSetOutagePreset(preset.unit)}
-                  disabled={saveActiveOutage.isPending}
+                  disabled={saveActiveOutage.isPending || !selectedToolboxId}
                 >
                   {preset.name}
                 </Button>
@@ -5305,10 +5483,10 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 <div>
                   <div className="text-sm font-semibold">Outage Movement</div>
                   <p className="text-xs text-muted-foreground">
-                    Use this for outage board moves. Inventory Bulk Edit only changes raw item location and does not stage a system on the board.
+                    Move available items to the selected outage location. Their inventory locations stay there until someone moves them back.
                   </p>
                 </div>
-                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+                <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                   <div className="space-y-2">
                     <Label>System</Label>
                     <Select value={outageMoveColor} onValueChange={setOutageMoveColor}>
@@ -5339,37 +5517,20 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Moved By</Label>
-                    <Input
-                      value={outageMoveBy}
-                      onChange={(event) => setOutageMoveBy(event.target.value)}
-                      placeholder="Tech name"
-                    />
-                  </div>
                   <Button
                     className="h-9"
                     onClick={handleAdminOutageMove}
-                    disabled={saveStagedSystem.isPending || !outageMoveColor || !outageMoveLocation}
+                    disabled={updateEquipment.isPending || !outageMoveColor || !outageMoveLocation}
                   >
-                    Move System
+                    Move Available Items
                   </Button>
-                </div>
-                <div className="space-y-2">
-                  <Label>Move Note</Label>
-                  <Textarea
-                    className="min-h-16 resize-none text-xs"
-                    value={outageMoveNotes}
-                    onChange={(event) => setOutageMoveNotes(event.target.value)}
-                    placeholder="Optional, e.g. Yellow encoder broken, bring replacement."
-                  />
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {isOutageMode && (
+        {(isOutageMode || (isAdminDashboard && adminSection === "outage")) && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -5462,7 +5623,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                         <div key={card.key} className="rounded-md border border-border/60 bg-background px-3 py-2 text-xs space-y-2">
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <div className="text-sm font-semibold">{card.color} System</div>
+                              <div className="text-sm font-semibold">{card.title ?? `${card.color} System`}</div>
                               <div className="text-muted-foreground">{card.detail}</div>
                             </div>
                             <Badge variant={card.badgeVariant} className="shrink-0 text-[10px]">
@@ -5472,6 +5633,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                           {card.missingLabels.length > 0 && (
                             <div className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300">
                               Needs: {card.missingLabels.join(", ")}
+                            </div>
+                          )}
+                          {card.status === "At location" && (
+                            <div className="space-y-1">
+                              {card.items.slice(0, 4).map((item) => (
+                                <div key={item.id} className="flex items-center justify-between gap-2 text-[11px]">
+                                  <span className="font-mono">{item.id}</span>
+                                  <span className="truncate text-muted-foreground">{item.name}</span>
+                                </div>
+                              ))}
+                              {card.items.length > 4 && (
+                                <div className="text-[10px] text-muted-foreground">and {card.items.length - 4} more</div>
+                              )}
                             </div>
                           )}
                           <div className="flex flex-wrap items-center justify-between gap-2 text-muted-foreground">
@@ -5536,85 +5710,81 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         </div>
         )}
 
-        {!isOutageMode && canManageEquipment && (
+        {!isOutageMode && canManageEquipment && showAdminSection("overview") && (
           <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold tracking-tight">Locations</h2>
-                <p className="text-xs text-muted-foreground">Manage staging areas for systems</p>
+                <h2 className="text-lg font-semibold tracking-tight">Equipment by location</h2>
+                <p className="text-xs text-muted-foreground">See what is sitting in each everyday location.</p>
               </div>
               <Button size="sm" onClick={() => setIsTransferOpen(true)}>
-                Transfer Location
+                Move Equipment
               </Button>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex-1">
-                <Label className="text-xs uppercase text-muted-foreground">Systems at location</Label>
-                <Select value={locationFilter} onValueChange={setLocationFilter}>
-                  <SelectTrigger className="mt-2">
-                    <SelectValue placeholder="Select a location..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {locationOptions.map((location) => (
-                      <SelectItem key={location} value={location}>
-                        {location}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1">
-                {systemsAtLocation.length === 0 ? (
-                  <div className="text-xs text-muted-foreground pt-6">No systems assigned.</div>
-                ) : (
-                  <div className="pt-6 space-y-1 text-xs">
-                    {systemsAtLocation.map((system) => (
-                      <div key={system.color} className="font-medium">
-                        {system.color} System
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {locationOptions.map((location) => {
-                const count = equipment.filter(
-                  (item) => (item.location ?? "Shop") === location
-                ).length;
-                const systemCount = new Set(
-                  equipment
-                    .filter((item) => (item.location ?? "Shop") === location)
-                    .map((item) => item.systemColor)
-                    .filter(Boolean)
-                ).size;
-                const isCustom = customLocations.includes(location);
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from(new Set(equipment.map((item) => item.location || "Shop")))
+                .sort((a, b) => a.localeCompare(b))
+                .map((location) => {
+                const itemsAtLocation = equipment.filter((item) => (item.location || "Shop") === location);
+                const availableCount = itemsAtLocation.filter((item) => item.status === "available" && !isRepairLocation(item.location)).length;
+                const checkedOutCount = itemsAtLocation.filter((item) => item.status === "checked_out").length;
+                const repairCount = itemsAtLocation.filter((item) => isRepairLocation(item.location)).length;
                 return (
-                  <div key={location} className="flex items-center justify-between rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
-                    <span className="font-semibold">{location}</span>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <span>
-                        {systemCount} systems • {count} items
+                  <div key={location} className="flex items-center rounded-lg border border-border/60 bg-muted/20 transition-colors hover:border-primary/40 hover:bg-muted/40">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInventoryLocationFilter(location);
+                        navigateAdminSection("inventory");
+                      }}
+                      className="min-w-0 flex-1 p-3 text-left"
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="truncate font-semibold">{location}</span>
+                        <Badge variant="outline">{itemsAtLocation.length} items</Badge>
                       </span>
-                      {isCustom && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-[10px]"
-                          onClick={() => handleRemoveLocation(location)}
-                        >
-                          Delete
-                        </Button>
-                      )}
-                    </div>
+                      <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                        <span className="text-emerald-500">{availableCount} available</span>
+                        <span>{checkedOutCount} checked out</span>
+                        {repairCount > 0 && <span className="text-destructive">{repairCount} in repair</span>}
+                      </span>
+                    </button>
+                    {customLocations.includes(location) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="mr-2 h-7 shrink-0 px-2 text-[10px]"
+                        onClick={() => handleRemoveLocation(location)}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 );
               })}
             </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <Label htmlFor="location-system-filter" className="text-xs">Systems at location</Label>
+              <Select value={locationFilter} onValueChange={setLocationFilter}>
+                <SelectTrigger id="location-system-filter" className="h-8 w-48">
+                  <SelectValue placeholder="Select a location..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {locationOptions.map((location) => (
+                    <SelectItem key={location} value={location}>{location}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {systemsAtLocation.length === 0 ? (
+                <span>No systems assigned.</span>
+              ) : (
+                <span>{systemsAtLocation.map((system) => `${system.color} System`).join(" · ")}</span>
+              )}
+            </div>
           </div>
         )}
 
-        {!isOutageMode && (
+        {!isOutageMode && (!isAdminDashboard || showAdminSection("overview")) && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold tracking-tight">Checked Out</h2>
@@ -5708,7 +5878,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
           </div>
         )}
 
-        {!isOutageMode && (
+        {!isOutageMode && showAdminSection("systems") && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
           <Tabs defaultValue="good">
             <TabsList className="flex w-full flex-nowrap gap-2 overflow-x-auto py-1">
@@ -6000,7 +6170,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         )}
 
         {/* Action Button */}
-        {!isOutageMode && (
+        {!isOutageMode && (!isAdminDashboard || showAdminSection("overview")) && (
         <>
         <div className="grid grid-cols-2 gap-4">
           <button 
@@ -6024,7 +6194,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         </>
         )}
         {/* Equipment List */}
-        {!isOutageMode && (
+        {!isOutageMode && showAdminSection("inventory") && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-4">
             <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -6041,7 +6211,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                   )}
                 </div>
                 <div className="flex flex-col gap-3">
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px]">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px_180px]">
                     {canManageEquipment && (
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -6066,6 +6236,17 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                           </SelectItem>
                         ))}
                         <SelectItem value="Unassigned">Unassigned</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={inventoryLocationFilter} onValueChange={setInventoryLocationFilter}>
+                      <SelectTrigger className="w-full overflow-hidden text-xs">
+                        <SelectValue placeholder="Filter by location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Locations</SelectItem>
+                        {locationOptions.map((location) => (
+                          <SelectItem key={location} value={location}>{location}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
@@ -6184,6 +6365,39 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               )}
             </div>
         </div>
+        )}
+        {isAdminDashboard && adminSection === "activity" && (
+          <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold tracking-tight">Recent activity</h3>
+              <p className="text-sm text-muted-foreground">Saved equipment history refreshes while this page is open.</p>
+            </div>
+            {isHistoryLoading ? (
+              <div className="text-sm text-muted-foreground">Loading activity...</div>
+            ) : isHistoryError ? (
+              <div className="text-sm text-destructive">Activity could not be loaded. Check your connection and try again.</div>
+            ) : recentHistory.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                No recent activity.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentHistory.map((entry) => (
+                  <div key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+                    <div>
+                      <div className="font-medium">{entry.details || entry.action}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {entry.workOrder ? `WO ${entry.workOrder} · ` : ""}{entry.equipmentId}
+                      </div>
+                    </div>
+                    <time className="text-xs text-muted-foreground" dateTime={entry.timestamp}>
+                      {format(new Date(entry.timestamp), "MMM d, HH:mm")}
+                    </time>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         )}
       </main>
 

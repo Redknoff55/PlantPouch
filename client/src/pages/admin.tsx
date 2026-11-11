@@ -49,50 +49,56 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6">
-      <Card className="w-full max-w-md border border-border shadow-2xl">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Lock className="w-5 h-5 text-primary" />
-            <CardTitle>Admin Access</CardTitle>
+    <div className="flex min-h-screen items-center justify-center bg-muted/20 p-4 text-foreground sm:p-6">
+      <Card className="w-full max-w-md border-border/70 shadow-xl">
+        <CardHeader className="space-y-4 pb-5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Lock className="h-5 w-5" />
           </div>
-          <CardDescription>
-            {storedPin ? "Enter your admin PIN to continue." : "Create your admin PIN."}
-          </CardDescription>
+          <div className="space-y-1.5">
+            <CardTitle className="text-xl tracking-tight">Admin Access</CardTitle>
+            <CardDescription>
+              {storedPin ? "Enter your admin PIN to continue." : "Create your admin PIN to secure this workspace."}
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <Label>{storedPin ? "PIN" : "New PIN"}</Label>
-            <Input
-              type="password"
-              inputMode="numeric"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              placeholder="Enter PIN"
-            />
-          </div>
-          {!storedPin && (
+          <form className="space-y-5" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <Label>Confirm PIN</Label>
+              <Label htmlFor="admin-pin">{storedPin ? "PIN" : "New PIN"}</Label>
               <Input
+                id="admin-pin"
                 type="password"
                 inputMode="numeric"
-                value={confirmPin}
-                onChange={(e) => setConfirmPin(e.target.value)}
-                placeholder="Confirm PIN"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder={storedPin ? "Enter PIN" : "At least 4 digits"}
+                autoComplete={storedPin ? "current-password" : "new-password"}
               />
             </div>
-          )}
-          {error && <div className="text-sm text-destructive">{error}</div>}
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setLocation("/")}>
-              Back
-            </Button>
-            <Button className="flex-1" type="submit">
-              {storedPin ? "Unlock" : "Set PIN"}
-            </Button>
-          </div>
+            {!storedPin && (
+              <div className="space-y-2">
+                <Label htmlFor="admin-pin-confirm">Confirm PIN</Label>
+                <Input
+                  id="admin-pin-confirm"
+                  type="password"
+                  inputMode="numeric"
+                  value={confirmPin}
+                  onChange={(e) => setConfirmPin(e.target.value)}
+                  placeholder="Re-enter PIN"
+                  autoComplete="new-password"
+                />
+              </div>
+            )}
+            {error && <div className="text-sm text-destructive" role="alert">{error}</div>}
+            <div className="flex gap-2 pt-1">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setLocation("/")}>
+                Back
+              </Button>
+              <Button className="flex-1" type="submit">
+                {storedPin ? "Unlock" : "Set PIN"}
+              </Button>
+            </div>
           </form>
         </CardContent>
       </Card>

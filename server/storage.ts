@@ -41,6 +41,7 @@ export interface IStorage {
   getEquipment(id: string): Promise<Equipment | undefined>;
   createEquipment(equipment: InsertEquipment): Promise<Equipment>;
   updateEquipment(id: string, updates: Partial<InsertEquipment>): Promise<Equipment | undefined>;
+  moveEquipment(id: string, location: string, details?: string): Promise<Equipment | undefined>;
   deleteEquipment(id: string): Promise<boolean>;
   
   // Equipment by filters
@@ -138,6 +139,26 @@ export class DatabaseStorage implements IStorage {
       .where(eq(equipmentTable.id, id))
       .returning();
     return result[0];
+  }
+
+  async moveEquipment(id: string, location: string, details?: string): Promise<Equipment | undefined> {
+    return db.transaction(async (transaction) => {
+      const [moved] = await transaction
+        .update(equipmentTable)
+        .set({ location, updatedAt: new Date() })
+        .where(eq(equipmentTable.id, id))
+        .returning();
+      if (!moved) return undefined;
+
+      await transaction.insert(equipmentHistoryTable).values({
+        equipmentId: id,
+        action: "move",
+        details: details?.trim() || `Moved to ${location}`,
+        workOrder: moved.workOrder ?? undefined,
+      });
+
+      return moved;
+    });
   }
 
   async deleteEquipment(id: string): Promise<boolean> {

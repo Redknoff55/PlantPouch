@@ -417,6 +417,26 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/equipment/:id/move", async (req, res) => {
+    try {
+      const { location, details } = z.object({
+        location: z.string().trim().min(1),
+        details: z.string().trim().max(500).optional(),
+      }).parse(req.body);
+      const equipment = await storage.moveEquipment(req.params.id, location, details);
+      if (!equipment) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+      res.json(equipment);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: fromZodError(error).toString() });
+      }
+      console.error("Error moving equipment:", error);
+      res.status(500).json({ error: "Failed to move equipment" });
+    }
+  });
+
   app.post("/api/equipment/cleanup/stale-checkout-notes", async (_req, res) => {
     try {
       const allEquipment = await storage.getAllEquipment();
