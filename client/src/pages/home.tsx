@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { addMonths, format } from "date-fns";
+import { addDays, addMonths, format, startOfDay } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -4014,6 +4014,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [searchTerm, setSearchTerm] = useState("");
   const [inventoryColorFilter, setInventoryColorFilter] = useState("All");
   const [inventoryLocationFilter, setInventoryLocationFilter] = useState("All");
+  const [inventoryDueDateFilter, setInventoryDueDateFilter] = useState("All");
   const [bagPreviewColor, setBagPreviewColor] = useState("none");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -4896,13 +4897,27 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const inventorySource = canManageEquipment ? filteredEquipment : equipment;
   const inventoryFiltered = inventorySource.filter((item) => {
     if (inventoryLocationFilter !== "All" && getLocation(item) !== inventoryLocationFilter) return false;
-    if (inventoryColorFilter === "All") return true;
     if (inventoryColorFilter === "Needs Cal") {
       const status = getDueDateStatus(item.dueDate);
-      return status === "yellow" || status === "red";
+      if (status !== "yellow" && status !== "red") return false;
+    } else if (inventoryColorFilter !== "All") {
+      const effectiveColor = item.temporarySystemColor || item.systemColor || "Unassigned";
+      if (effectiveColor !== inventoryColorFilter) return false;
     }
-    const effectiveColor = item.temporarySystemColor || item.systemColor || "Unassigned";
-    return effectiveColor === inventoryColorFilter;
+
+    if (inventoryDueDateFilter !== "All") {
+      if (!item.dueDate) return inventoryDueDateFilter === "no-date";
+      const dueDate = startOfDay(new Date(item.dueDate));
+      if (Number.isNaN(dueDate.getTime())) return inventoryDueDateFilter === "no-date";
+      const today = startOfDay(new Date());
+      if (inventoryDueDateFilter === "overdue") return dueDate < today;
+      if (inventoryDueDateFilter === "next-30") return dueDate >= today && dueDate <= addDays(today, 30);
+      if (inventoryDueDateFilter === "next-90") return dueDate > addDays(today, 30) && dueDate <= addDays(today, 90);
+      if (inventoryDueDateFilter === "later") return dueDate > addDays(today, 90);
+      return false;
+    }
+
+    return true;
   });
   const inventoryGrouped = Object.entries(
     sortEquipmentById(inventoryFiltered).reduce((acc, item) => {
@@ -6293,7 +6308,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                   )}
                 </div>
                 <div className="flex flex-col gap-3">
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px_180px]">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                     {canManageEquipment && (
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -6329,6 +6344,19 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                         {locationOptions.map((location) => (
                           <SelectItem key={location} value={location}>{location}</SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                    <Select value={inventoryDueDateFilter} onValueChange={setInventoryDueDateFilter}>
+                      <SelectTrigger className="w-full overflow-hidden text-xs">
+                        <SelectValue placeholder="Filter by due date" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="All">All Due Dates</SelectItem>
+                        <SelectItem value="overdue">Overdue</SelectItem>
+                        <SelectItem value="next-30">Due in the next 30 days</SelectItem>
+                        <SelectItem value="next-90">Due in 31-90 days</SelectItem>
+                        <SelectItem value="later">Due after 90 days</SelectItem>
+                        <SelectItem value="no-date">No due date</SelectItem>
                       </SelectContent>
                     </Select>
                     <Select value={bagPreviewColor} onValueChange={setBagPreviewColor}>
