@@ -13,6 +13,7 @@ import {
   useCheckoutSystem,
   useCheckoutAccessories,
   useReturnAccessory,
+  useReassignRetainedAccessory,
   useCheckinByWorkOrder,
   useCheckout,
   useCheckin,
@@ -1985,6 +1986,137 @@ function AccessoryCheckoutModal({
         </div>
       </motion.div>
     </div>
+  );
+}
+
+function RetainedAccessoriesPanel({ equipment }: { equipment: Equipment[] }) {
+  const returnAccessory = useReturnAccessory();
+  const reassignAccessory = useReassignRetainedAccessory();
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [workOrder, setWorkOrder] = useState("");
+  const [techName, setTechName] = useState(
+    typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? ""
+  );
+  const retainedAccessories = equipment.filter(
+    (item) => item.status === "checked_out" && !!item.accessoryHomeLocation
+  );
+
+  const handleReturn = (item: Equipment) => {
+    const location = item.accessoryHomeLocation || item.location || "its checkout location";
+    if (!window.confirm(`Confirm ${item.id} was physically returned to ${location}?`)) return;
+    returnAccessory.mutate(item.id, {
+      onSuccess: () => toast.success(`${item.id} returned to ${location}.`),
+      onError: (error) => toast.error(error.message),
+    });
+  };
+
+  const handleAssign = (item: Equipment) => {
+    if (!workOrder.trim() || !techName.trim()) return;
+    reassignAccessory.mutate(
+      { id: item.id, workOrder: workOrder.trim(), techName: techName.trim() },
+      {
+        onSuccess: () => {
+          localStorage.setItem("plantpouch-tech-name", techName.trim());
+          setAssigningId(null);
+          setWorkOrder("");
+          toast.success(`${item.name} assigned to WO ${workOrder.trim()}.`);
+        },
+        onError: (error) => toast.error(error.message),
+      }
+    );
+  };
+
+  if (retainedAccessories.length === 0) return null;
+
+  return (
+    <Card className="border-amber-500/30 bg-amber-500/5">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Shared Accessories in Use</CardTitle>
+        <CardDescription>
+          Retained accessories stay visible here with their notes until they are physically returned.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {retainedAccessories.map((item) => {
+          const canPickUp = !item.workOrder;
+          const isAssigning = assigningId === item.id;
+          return (
+            <div key={item.id} className="rounded-lg border border-border/60 bg-background/70 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 font-semibold">
+                    {item.name}
+                    <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                    {item.accessorySystemColor && <Badge variant="secondary">{item.accessorySystemColor} system</Badge>}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {item.checkedOutBy || "Unknown tech"}
+                    {item.workOrder ? ` · WO ${item.workOrder}` : " · Retained, available for pickup"}
+                    {item.accessoryHomeLocation ? ` · From ${item.accessoryHomeLocation}` : ""}
+                  </div>
+                  {item.accessoryNote && (
+                    <p className="mt-2 whitespace-pre-wrap text-sm text-amber-800 dark:text-amber-300">
+                      {item.accessoryNote}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {canPickUp && (
+                    <Button
+                      size="sm"
+                      variant={isAssigning ? "secondary" : "outline"}
+                      onClick={() => {
+                        setAssigningId(isAssigning ? null : item.id);
+                        setWorkOrder("");
+                        setTechName(localStorage.getItem("plantpouch-tech-name") ?? "");
+                      }}
+                    >
+                      {isAssigning ? "Cancel pickup" : "Pick up for a job"}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleReturn(item)}
+                    disabled={returnAccessory.isPending}
+                  >
+                    Confirm Return
+                  </Button>
+                </div>
+              </div>
+              {isAssigning && (
+                <div className="mt-3 grid gap-2 border-t border-border/60 pt-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+                  <div className="space-y-1">
+                    <Label htmlFor={`retained-accessory-wo-${item.id}`}>Work Order #</Label>
+                    <Input
+                      id={`retained-accessory-wo-${item.id}`}
+                      value={workOrder}
+                      onChange={(event) => setWorkOrder(event.target.value)}
+                      placeholder="Enter WO-XXXX"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor={`retained-accessory-tech-${item.id}`}>Tech Name</Label>
+                    <Input
+                      id={`retained-accessory-tech-${item.id}`}
+                      value={techName}
+                      onChange={(event) => setTechName(event.target.value)}
+                      placeholder="Enter your name"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => handleAssign(item)}
+                    disabled={!workOrder.trim() || !techName.trim() || reassignAccessory.isPending}
+                  >
+                    {reassignAccessory.isPending ? "Assigning..." : "Assign"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -4406,6 +4538,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const { data: activeOutage = null } = useActiveOutage(selectedToolboxId);
   const equipmentToolboxId = selectedToolboxId ?? (mode === "outage" ? activeOutage?.toolboxId ?? undefined : undefined);
   const { data: equipment = [], isLoading } = useEquipment(equipmentToolboxId);
+  const { data: allEquipment = [] } = useQuery({
+    queryKey: ["equipment", "all"],
+    queryFn: () => api.equipment.getAll(),
+    enabled: mode !== "admin",
+    refetchInterval: mode !== "admin" ? 10_000 : false,
+  });
   const { data: systems = [] } = useSystems(equipmentToolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs(equipmentToolboxId);
   const { data: stagedSystems = [] } = useStagedSystems(equipmentToolboxId);
@@ -6313,6 +6451,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             </div>
           </div>
         )}
+
+        {mode !== "admin" && <RetainedAccessoriesPanel equipment={allEquipment} />}
 
         {!isOutageMode && (!isAdminDashboard || showAdminSection("overview")) && (
         <div className="rounded-xl border border-border bg-card p-4 shadow-sm space-y-3">

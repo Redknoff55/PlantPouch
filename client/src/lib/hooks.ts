@@ -112,6 +112,20 @@ export function useReturnAccessory() {
   });
 }
 
+export function useReassignRetainedAccessory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, workOrder, techName }: {
+      id: string;
+      workOrder: string;
+      techName: string;
+    }) => api.equipment.reassignRetainedAccessory(id, { workOrder, techName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["equipment"] });
+    },
+  });
+}
+
 export function useCheckout() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -631,6 +631,45 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/equipment/:id/accessory-reassign", async (req, res) => {
+    try {
+      const { workOrder, techName } = z.object({
+        workOrder: z.string().trim().min(1),
+        techName: z.string().trim().min(1),
+      }).parse(req.body);
+      const existing = await storage.getEquipment(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Equipment not found" });
+      const accessoryContext = await getAccessoryInventoryContext();
+      if (!accessoryContext.isAccessory(existing) || !existing.accessoryHomeLocation) {
+        return res.status(400).json({ error: "Equipment is not a retained accessory." });
+      }
+      if (existing.status !== "checked_out" || existing.workOrder) {
+        return res.status(409).json({ error: "Only an unassigned retained accessory can be picked up." });
+      }
+
+      const assigned = await storage.updateEquipment(existing.id, {
+        workOrder,
+        checkedOutBy: techName,
+        checkedOutAt: new Date(),
+        notes: `Retained accessory picked up for WO ${workOrder} by ${techName}. Retention note: ${existing.accessoryNote ?? "None"}`,
+      });
+      if (!assigned) return res.status(404).json({ error: "Equipment not found" });
+      await storage.addEquipmentHistory({
+        equipmentId: existing.id,
+        action: "accessory_reassigned",
+        details: `Retained accessory picked up for WO ${workOrder} by ${techName}. Note: ${existing.accessoryNote ?? "None"}`,
+        workOrder,
+      });
+      res.json(assigned);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("Error assigning retained accessory:", error);
+      res.status(500).json({ error: "Failed to assign retained accessory" });
+    }
+  });
+
   // Delete equipment
   app.delete("/api/equipment/:id", async (req, res) => {
     try {
