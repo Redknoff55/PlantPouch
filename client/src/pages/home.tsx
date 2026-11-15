@@ -1763,6 +1763,7 @@ function AccessoryCheckoutModal({
   initialWorkOrder,
   initialSystemColor,
   initialWarehouseId,
+  initialToolboxId,
   initialTechName,
 }: {
   isOpen: boolean;
@@ -1770,6 +1771,7 @@ function AccessoryCheckoutModal({
   initialWorkOrder?: string;
   initialSystemColor?: string;
   initialWarehouseId?: string;
+  initialToolboxId?: string;
   initialTechName?: string;
 }) {
   const { data: equipment = [] } = useEquipment(undefined, isOpen ? 10_000 : false);
@@ -1788,12 +1790,19 @@ function AccessoryCheckoutModal({
   const toolboxById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox]));
   const warehouseById = new Map((registry?.warehouses ?? []).map((warehouse) => [warehouse.id, warehouse]));
   const accessorySourceToolboxes = (registry?.toolboxes ?? []).filter(
-    (toolbox) => toolbox.isAccessoryToolbox && (!initialWarehouseId || toolbox.warehouseId === initialWarehouseId)
+    (toolbox) =>
+      toolbox.isAccessoryToolbox &&
+      (!initialToolboxId || toolbox.id === initialToolboxId) &&
+      (!initialWarehouseId || toolbox.warehouseId === initialWarehouseId)
   );
   const accessorySourceToolboxIds = new Set(accessorySourceToolboxes.map((toolbox) => toolbox.id));
   const accessories = equipment.filter((item) => {
     const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
-    if (!toolbox || (initialWarehouseId && toolbox.warehouseId !== initialWarehouseId)) return false;
+    if (
+      !toolbox ||
+      (initialToolboxId && toolbox.id !== initialToolboxId) ||
+      (initialWarehouseId && toolbox.warehouseId !== initialWarehouseId)
+    ) return false;
     return accessorySourceToolboxIds.has(toolbox.id) ||
       (item.status === "checked_out" && !!item.accessoryHomeLocation);
   });
@@ -1819,7 +1828,7 @@ function AccessoryCheckoutModal({
     setTechName(initialTechName ?? localStorage.getItem("plantpouch-tech-name") ?? "");
     setValveNumber("");
     setSelectedIds([]);
-  }, [initialSystemColor, initialTechName, initialWarehouseId, initialWorkOrder, isOpen]);
+  }, [initialSystemColor, initialTechName, initialToolboxId, initialWarehouseId, initialWorkOrder, isOpen]);
 
   const handleCheckout = () => {
     if (selectedIds.length === 0 || !workOrder.trim() || !techName.trim()) return;
@@ -1830,6 +1839,7 @@ function AccessoryCheckoutModal({
         techName: techName.trim(),
         systemColor: initialSystemColor,
         valveNumber: valveNumber.trim() || undefined,
+        toolboxId: initialToolboxId,
       },
       {
         onSuccess: () => {
@@ -1868,7 +1878,9 @@ function AccessoryCheckoutModal({
             <p className="text-sm text-muted-foreground">
               {initialSystemColor
                 ? `Add items from ${accessorySourceToolboxes.map((toolbox) => toolbox.name).join(", ") || "the accessory toolbox"} to ${initialSystemColor}`
-                : "Check out accessory equipment independently"}
+                : initialToolboxId
+                  ? `Check out or return items from ${accessorySourceToolboxes[0]?.name ?? "this accessory toolbox"}`
+                  : "Check out accessory equipment independently"}
             </p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close accessories">
@@ -4552,6 +4564,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     queryKey: ["platform-registry"],
     queryFn: api.registry.get,
   });
+  const selectedToolbox = registry?.toolboxes.find((toolbox) => toolbox.id === selectedToolboxId);
+  const isAccessoryToolboxSelected = selectedToolbox?.isAccessoryToolbox === true;
   const adminEnabled = mode === "admin" || mode === "outage";
   const isOutageMode = mode === "outage";
   const updateEquipment = useUpdateEquipment();
@@ -4571,6 +4585,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
     workOrder?: string;
     systemColor?: string;
     warehouseId?: string;
+    toolboxId?: string;
     techName?: string;
   }>({});
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -6861,35 +6876,48 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
         {/* Action Button */}
         {!isOutageMode && (!isAdminDashboard || showAdminSection("overview")) && (
         <>
-        <div className="grid grid-cols-2 gap-4">
-          <button 
-              onClick={() => {
-                setCheckoutPreset(null);
-                setIsSystemCheckoutOpen(true);
-              }}
-              className="py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
-          >
-              <Box className="w-8 h-8" />
-              SYSTEM CHECKOUT
-          </button>
-          <button 
-              onClick={() => setIsSystemCheckInOpen(true)}
-              className="py-6 rounded-xl bg-secondary text-secondary-foreground font-bold text-lg shadow-sm hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
-          >
-              <ClipboardCheck className="w-8 h-8" />
-              SYSTEM CHECK IN
-          </button>
+        {isAccessoryToolboxSelected ? (
           <button
               onClick={() => {
-                setAccessoryCheckoutContext({});
+                setAccessoryCheckoutContext({ toolboxId: selectedToolboxId });
                 setIsAccessoryCheckoutOpen(true);
               }}
-              className="col-span-2 rounded-xl border border-border bg-card py-4 font-bold text-base shadow-sm hover:bg-muted/30 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+              className="w-full rounded-xl border border-border bg-card py-6 font-bold text-lg shadow-sm hover:bg-muted/30 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
           >
-              <PackageCheck className="w-5 h-5" />
+              <PackageCheck className="w-6 h-6" />
               ACCESSORY CHECKOUT / RETURN
           </button>
-        </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <button
+                onClick={() => {
+                  setCheckoutPreset(null);
+                  setIsSystemCheckoutOpen(true);
+                }}
+                className="py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/20 hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+            >
+                <Box className="w-8 h-8" />
+                SYSTEM CHECKOUT
+            </button>
+            <button
+                onClick={() => setIsSystemCheckInOpen(true)}
+                className="py-6 rounded-xl bg-secondary text-secondary-foreground font-bold text-lg shadow-sm hover:brightness-110 active:scale-[0.99] transition-all flex flex-col items-center justify-center gap-2"
+            >
+                <ClipboardCheck className="w-8 h-8" />
+                SYSTEM CHECK IN
+            </button>
+            <button
+                onClick={() => {
+                  setAccessoryCheckoutContext({});
+                  setIsAccessoryCheckoutOpen(true);
+                }}
+                className="col-span-2 rounded-xl border border-border bg-card py-4 font-bold text-base shadow-sm hover:bg-muted/30 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+            >
+                <PackageCheck className="w-5 h-5" />
+                ACCESSORY CHECKOUT / RETURN
+            </button>
+          </div>
+        )}
         </>
         )}
         {/* Equipment List */}
@@ -7171,6 +7199,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             initialWorkOrder={accessoryCheckoutContext.workOrder}
             initialSystemColor={accessoryCheckoutContext.systemColor}
             initialWarehouseId={accessoryCheckoutContext.warehouseId}
+            initialToolboxId={accessoryCheckoutContext.toolboxId}
             initialTechName={accessoryCheckoutContext.techName}
           />
         )}

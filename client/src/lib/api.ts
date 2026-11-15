@@ -253,6 +253,7 @@ export const api = {
       techName: string;
       systemColor?: string;
       valveNumber?: string;
+      toolboxId?: string;
     }): Promise<Equipment[]> => {
       const res = await fetch(`${API_BASE}/equipment/checkout/accessories`, {
         method: "POST",

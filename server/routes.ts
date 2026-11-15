@@ -91,13 +91,14 @@ export async function registerRoutes(
       !!item.accessoryHomeLocation ||
       !!item.accessorySystemColor ||
       !!item.accessoryNote;
-    const isEnabledAccessory = (item: Equipment, warehouseId?: string) => {
+    const isEnabledAccessory = (item: Equipment, warehouseId?: string, toolboxId?: string) => {
       const toolbox = getToolbox(item);
       const warehouse = getWarehouse(item);
       return !!toolbox?.isAccessoryToolbox &&
         toolbox.enabled &&
         !!warehouse?.enabled &&
-        (!warehouseId || toolbox.warehouseId === warehouseId);
+        (!warehouseId || toolbox.warehouseId === warehouseId) &&
+        (!toolboxId || toolbox.id === toolboxId);
     };
     return { isAccessory, isEnabledAccessory, getToolbox };
   };
@@ -513,12 +514,13 @@ export async function registerRoutes(
 
   app.post("/api/equipment/checkout/accessories", async (req, res) => {
     try {
-      const { equipmentIds, workOrder, techName, systemColor, valveNumber } = z.object({
+      const { equipmentIds, workOrder, techName, systemColor, valveNumber, toolboxId } = z.object({
         equipmentIds: z.array(z.string().min(1)).min(1),
         workOrder: z.string().trim().min(1),
         techName: z.string().trim().min(1),
         systemColor: z.string().trim().min(1).optional(),
         valveNumber: z.string().optional(),
+        toolboxId: z.string().min(1).optional(),
       }).parse(req.body);
       if (new Set(equipmentIds).size !== equipmentIds.length) {
         return res.status(400).json({ error: "Accessories cannot be selected more than once." });
@@ -542,8 +544,8 @@ export async function registerRoutes(
         }
       }
       const selectedItems = await Promise.all(equipmentIds.map((id) => storage.getEquipment(id)));
-      if (selectedItems.some((item) => !item || !accessoryContext.isEnabledAccessory(item, targetWarehouseId))) {
-        return res.status(400).json({ error: "Accessories must come from an enabled accessory toolbox in the system's warehouse." });
+      if (selectedItems.some((item) => !item || !accessoryContext.isEnabledAccessory(item, targetWarehouseId, toolboxId))) {
+        return res.status(400).json({ error: "Accessories must come from the selected enabled accessory toolbox." });
       }
       for (const item of selectedItems) {
         if (!item) continue;

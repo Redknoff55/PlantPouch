@@ -95,6 +95,7 @@ export function useCheckoutAccessories() {
       techName: string;
       systemColor?: string;
       valveNumber?: string;
+      toolboxId?: string;
     }) => api.equipment.checkoutAccessories(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
