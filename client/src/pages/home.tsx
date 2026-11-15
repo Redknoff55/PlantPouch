@@ -11,6 +11,8 @@ import {
   useEquipment,
   useCreateEquipment,
   useCheckoutSystem,
+  useCheckoutAccessories,
+  useReturnAccessory,
   useCheckinByWorkOrder,
   useCheckout,
   useCheckin,
@@ -131,6 +133,15 @@ const getDueDateStatus = (dueDate?: string | Date | null) => {
   if (date.getTime() <= oneMonth.getTime()) return "red";
   if (date.getTime() <= threeMonths.getTime()) return "yellow";
   return "green";
+};
+
+const isCalibrationCurrent = (dueDate?: string | Date | null) => {
+  if (!dueDate) return true;
+  const date = dueDate instanceof Date ? dueDate : new Date(dueDate);
+  if (Number.isNaN(date.getTime())) return false;
+  const dueDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const today = new Date();
+  return dueDay > new Date(today.getFullYear(), today.getMonth(), today.getDate());
 };
 
 const formatDueDateLabel = (dueDate?: string | Date | null) => {
@@ -342,6 +353,7 @@ function EditEquipmentModal({
   onClose,
   locationOptions,
   systemColorOptions,
+  isAccessoryWarehouse = false,
   onAddLocation,
   onIdUpdated,
 }: {
@@ -350,6 +362,7 @@ function EditEquipmentModal({
   onClose: () => void;
   locationOptions: string[];
   systemColorOptions: string[];
+  isAccessoryWarehouse?: boolean;
   onAddLocation: (value: string) => void;
   onIdUpdated?: (newId: string) => void;
 }) {
@@ -360,6 +373,7 @@ function EditEquipmentModal({
     category: equipment.category,
     variant: equipment.variant ?? "",
     systemColor: equipment.systemColor ?? "",
+    accessorySystemLabels: equipment.accessorySystemLabels.join(", "),
     location: equipment.location ?? "Shop",
     dueDate: formatDueDateValue(equipment.dueDate),
   });
@@ -373,6 +387,7 @@ function EditEquipmentModal({
       category: equipment.category,
       variant: equipment.variant ?? "",
       systemColor: equipment.systemColor ?? "",
+      accessorySystemLabels: equipment.accessorySystemLabels.join(", "),
       location: equipment.location ?? "Shop",
       dueDate: formatDueDateValue(equipment.dueDate),
     });
@@ -391,6 +406,10 @@ function EditEquipmentModal({
       category: formData.category,
       variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
+      accessorySystemLabels: formData.accessorySystemLabels
+        .split(",")
+        .map((label) => label.trim())
+        .filter((label, index, labels) => label && labels.indexOf(label) === index),
       location: formData.location || "Shop",
     };
     const dueDateInput = formData.dueDate.trim();
@@ -504,6 +523,18 @@ function EditEquipmentModal({
               </Select>
             </div>
 
+            {isAccessoryWarehouse && (
+              <div className="space-y-2">
+                <Label>Accessory system labels (Optional)</Label>
+                <Input
+                  value={formData.accessorySystemLabels}
+                  onChange={(event) => setFormData((prev) => ({ ...prev, accessorySystemLabels: event.target.value }))}
+                  placeholder="Use warehouse defaults, or enter labels separated by commas"
+                />
+                <p className="text-xs text-muted-foreground">Item labels override the accessory warehouse defaults.</p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Location</Label>
               <Select
@@ -578,6 +609,7 @@ function ActionModal({
   isOpen, 
   onClose,
   canManageEquipment,
+  isAccessoryWarehouse = false,
   allEquipment,
   locationOptions,
   systemColorOptions,
@@ -591,6 +623,7 @@ function ActionModal({
   isOpen: boolean; 
   onClose: () => void;
   canManageEquipment: boolean;
+  isAccessoryWarehouse?: boolean;
   allEquipment: Equipment[];
   locationOptions: string[];
   systemColorOptions: string[];
@@ -993,6 +1026,7 @@ function ActionModal({
             onClose={() => setIsEditing(false)}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
+            isAccessoryWarehouse={isAccessoryWarehouse}
             onAddLocation={onAddLocation}
             onIdUpdated={onIdUpdated}
           />
@@ -1015,10 +1049,15 @@ function SystemCheckoutModal({
   initialValveNumber?: string | null;
 }) {
   const { data: equipment = [] } = useEquipment(toolboxId, isOpen ? 10_000 : false);
+  const { data: allEquipment = [] } = useEquipment(undefined, isOpen ? 10_000 : false);
   const { data: systems = [] } = useSystems(toolboxId);
   const { data: systemConfigs = [] } = useSystemConfigs(toolboxId);
+  const { data: registry } = useQuery({
+    queryKey: ["platform-registry"],
+    queryFn: api.registry.get,
+  });
   const checkoutSystem = useCheckoutSystem();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedComputerColor, setSelectedComputerColor] = useState<string>("");
   const [selectedBagColor, setSelectedBagColor] = useState<string>("");
   const [selectedComputerId, setSelectedComputerId] = useState<string>("");
@@ -1032,6 +1071,7 @@ function SystemCheckoutModal({
   // Key: Original Item ID, Value: The ID of the item to actually checkout (could be the same, or a replacement)
   const [verifiedItems, setVerifiedItems] = useState<Record<string, string>>({});
   const [issues, setIssues] = useState<Record<string, string>>({});
+  const [selectedAccessoryIds, setSelectedAccessoryIds] = useState<string[]>([]);
 
   const isItemAvailable = (item: Equipment) =>
     item.status === "available" &&
@@ -1183,6 +1223,21 @@ function SystemCheckoutModal({
       : []),
     ...bagSlots,
   ];
+  const compatibleAccessories = allEquipment.filter((item) => {
+    if (item.status !== "available" || isRepairLocation(item.location) || !isCalibrationCurrent(item.dueDate)) return false;
+    const toolbox = registry?.toolboxes.find((entry) => entry.id === item.toolboxId);
+    const warehouse = registry?.warehouses.find((entry) => entry.id === toolbox?.warehouseId);
+    if (!warehouse?.enabled || !warehouse.isAccessoryWarehouse || !toolbox?.enabled) return false;
+    const labels = item.accessorySystemLabels.length > 0
+      ? item.accessorySystemLabels
+      : warehouse.defaultAccessorySystemLabels;
+    return labels.some((label) => label.trim().toLowerCase() === selectedComputerColor.trim().toLowerCase());
+  });
+  const toggleAccessory = (id: string) => {
+    setSelectedAccessoryIds((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
+    );
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1219,6 +1274,7 @@ function SystemCheckoutModal({
     setSelectedBagColor(initialSystemColor);
     setSelectedComputerId(selected.id);
     setVerifiedItems(initialVerified);
+    setSelectedAccessoryIds([]);
     setValveNumber(initialValveNumber ?? "");
     setStep(3);
   }, [equipment, systemConfigs, initialSystemColor, initialValveNumber, isOpen]);
@@ -1267,6 +1323,7 @@ function SystemCheckoutModal({
     });
     setSelectedBagColor(color);
     setVerifiedItems(initialVerified);
+    setSelectedAccessoryIds([]);
     setStep(3);
   };
 
@@ -1304,6 +1361,7 @@ function SystemCheckoutModal({
     checkoutSystem.mutate({
       systemColor: selectedComputerColor,
       equipmentIds: finalIds,
+      accessoryIds: selectedAccessoryIds,
       workOrder,
       techName: techName.trim(),
       valveNumber: trimmedValveNumber || undefined,
@@ -1438,6 +1496,57 @@ function SystemCheckoutModal({
                     );
                   })}
                 </div>
+              </div>
+            </div>
+          ) : step === 4 ? (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-lg font-semibold">Need any accessories?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Optional calibrated accessories tagged for {selectedComputerColor}. They remain owned by their accessory warehouse.
+                </p>
+              </div>
+              {compatibleAccessories.length === 0 ? (
+                <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
+                  No available calibrated accessories are tagged for this system.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {compatibleAccessories.map((item) => {
+                    const toolbox = registry?.toolboxes.find((entry) => entry.id === item.toolboxId);
+                    const warehouse = registry?.warehouses.find((entry) => entry.id === toolbox?.warehouseId);
+                    return (
+                      <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
+                        <Checkbox
+                          checked={selectedAccessoryIds.includes(item.id)}
+                          onCheckedChange={() => toggleAccessory(item.id)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2 font-medium">
+                            {item.name}
+                            <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                          </span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            {item.category}{item.variant ? ` · ${item.variant}` : ""} · {warehouse?.name ?? "Accessory warehouse"} · {item.location || "Shop"}
+                          </span>
+                          {item.dueDate && (
+                            <span className="mt-1 block text-xs text-muted-foreground">Due {formatDueDateValue(item.dueDate)}</span>
+                          )}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-3 border-t border-border pt-4">
+                <Button variant="outline" className="flex-1" onClick={() => setStep(3)}>Back</Button>
+                <Button
+                  className="flex-[2]"
+                  onClick={handleSubmit}
+                  disabled={!workOrder || !techName.trim() || checkoutSystem.isPending}
+                >
+                  {checkoutSystem.isPending ? "Checking Out..." : "Check Out System"}
+                </Button>
               </div>
             </div>
           ) : (
@@ -1646,10 +1755,10 @@ function SystemCheckoutModal({
                   </div>
                   <Button 
                     className="w-full h-12 text-lg font-bold" 
-                    onClick={handleSubmit}
-                    disabled={!workOrder || !techName.trim() || !selectedComputerId}
+                    onClick={() => compatibleAccessories.length > 0 ? setStep(4) : handleSubmit()}
+                    disabled={!workOrder || !techName.trim() || !selectedComputerId || checkoutSystem.isPending}
                   >
-                    Check Out System
+                    {compatibleAccessories.length > 0 ? "Continue to Accessories" : "Check Out System"}
                   </Button>
                   {unresolvedRequiredSlots.length > 0 && (
                     <p className="text-xs text-amber-600">
@@ -1665,6 +1774,229 @@ function SystemCheckoutModal({
   );
 }
 
+function AccessoryCheckoutModal({
+  isOpen,
+  onClose,
+  initialWorkOrder,
+  initialSystemColor,
+  initialTechName,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  initialWorkOrder?: string;
+  initialSystemColor?: string;
+  initialTechName?: string;
+}) {
+  const { data: equipment = [] } = useEquipment(undefined, isOpen ? 10_000 : false);
+  const { data: registry } = useQuery({
+    queryKey: ["platform-registry"],
+    queryFn: api.registry.get,
+  });
+  const checkoutAccessories = useCheckoutAccessories();
+  const returnAccessory = useReturnAccessory();
+  const [workOrder, setWorkOrder] = useState(initialWorkOrder ?? "");
+  const [techName, setTechName] = useState(
+    initialTechName ?? (typeof window === "undefined" ? "" : localStorage.getItem("plantpouch-tech-name") ?? "")
+  );
+  const [valveNumber, setValveNumber] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const toolboxById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox]));
+  const warehouseById = new Map((registry?.warehouses ?? []).map((warehouse) => [warehouse.id, warehouse]));
+  const getWarehouse = (item: Equipment) => {
+    const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+    return toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+  };
+  const accessories = equipment.filter((item) => {
+    const warehouse = getWarehouse(item);
+    if (!warehouse?.enabled || !warehouse.isAccessoryWarehouse) return false;
+    if (initialSystemColor) {
+      const labels = item.accessorySystemLabels.length > 0
+        ? item.accessorySystemLabels
+        : warehouse.defaultAccessorySystemLabels;
+      if (!labels.some((label) => label.trim().toLowerCase() === initialSystemColor.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
+  const availableAccessories = accessories.filter(
+    (item) => item.status === "available" && !isRepairLocation(item.location) && isCalibrationCurrent(item.dueDate)
+  );
+  const checkedOutAccessories = accessories.filter((item) => item.status === "checked_out");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setWorkOrder(initialWorkOrder ?? "");
+    setTechName(initialTechName ?? localStorage.getItem("plantpouch-tech-name") ?? "");
+    setValveNumber("");
+    setSelectedIds([]);
+  }, [initialSystemColor, initialTechName, initialWorkOrder, isOpen]);
+
+  const handleCheckout = () => {
+    if (selectedIds.length === 0 || !workOrder.trim() || !techName.trim()) return;
+    checkoutAccessories.mutate(
+      {
+        equipmentIds: selectedIds,
+        workOrder: workOrder.trim(),
+        techName: techName.trim(),
+        systemColor: initialSystemColor,
+        valveNumber: valveNumber.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          localStorage.setItem("plantpouch-tech-name", techName.trim());
+          toast.success(`Checked out ${selectedIds.length} accessory item(s).`);
+          onClose();
+        },
+        onError: (error) => toast.error(error.message),
+      }
+    );
+  };
+
+  const handleReturn = (item: Equipment) => {
+    const location = item.accessoryHomeLocation || item.location || "its checkout location";
+    if (!window.confirm(`Confirm ${item.id} was physically returned to ${location}?`)) return;
+    returnAccessory.mutate(item.id, {
+      onSuccess: () => toast.success(`${item.id} returned to ${location}.`),
+      onError: (error) => toast.error(error.message),
+    });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-border p-6">
+          <div>
+            <h2 className="text-xl font-bold">Accessories</h2>
+            <p className="text-sm text-muted-foreground">
+              {initialSystemColor
+                ? `Accessories tagged for ${initialSystemColor}`
+                : "Check out accessory equipment independently"}
+            </p>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close accessories">
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        <div className="space-y-6 overflow-y-auto p-6">
+          <section className="space-y-3">
+            <div>
+              <h3 className="font-semibold">Available accessories</h3>
+              <p className="text-xs text-muted-foreground">
+                Items due today or overdue are not available for checkout.
+              </p>
+            </div>
+            {availableAccessories.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+                No available calibrated accessories{initialSystemColor ? ` tagged for ${initialSystemColor}` : ""}.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {availableAccessories.map((item) => {
+                  const warehouse = getWarehouse(item);
+                  return (
+                    <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
+                      <Checkbox
+                        checked={selectedIds.includes(item.id)}
+                        onCheckedChange={() => setSelectedIds((ids) =>
+                          ids.includes(item.id) ? ids.filter((id) => id !== item.id) : [...ids, item.id]
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2 font-medium">
+                          {item.name}
+                          <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                        </span>
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {item.category}{item.variant ? ` · ${item.variant}` : ""} · {warehouse?.name} · {item.location || "Shop"}
+                        </span>
+                        {item.dueDate && (
+                          <span className="mt-1 block text-xs text-muted-foreground">Calibration due {formatDueDateValue(item.dueDate)}</span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3 border-t border-border pt-5">
+            <h3 className="font-semibold">Checkout details</h3>
+            {!initialWorkOrder && (
+              <div className="space-y-2">
+                <Label>Work Order #</Label>
+                <Input value={workOrder} onChange={(event) => setWorkOrder(event.target.value)} placeholder="Enter WO-XXXX" />
+              </div>
+            )}
+            {initialWorkOrder && (
+              <p className="text-sm text-muted-foreground">Adding accessories to WO {initialWorkOrder}</p>
+            )}
+            <div className="space-y-2">
+              <Label>Tech Name</Label>
+              <Input value={techName} onChange={(event) => setTechName(event.target.value)} placeholder="Enter your name" />
+            </div>
+            {!initialSystemColor && (
+              <div className="space-y-2">
+                <Label>Valve # (Optional)</Label>
+                <Input value={valveNumber} onChange={(event) => setValveNumber(event.target.value)} placeholder="Enter valve number" />
+              </div>
+            )}
+            <Button
+              className="w-full"
+              onClick={handleCheckout}
+              disabled={selectedIds.length === 0 || !workOrder.trim() || !techName.trim() || checkoutAccessories.isPending}
+            >
+              {checkoutAccessories.isPending ? "Checking Out..." : `Check Out ${selectedIds.length || ""} Accessory${selectedIds.length === 1 ? "" : " Items"}`}
+            </Button>
+          </section>
+
+          <section className="space-y-3 border-t border-border pt-5">
+            <div>
+              <h3 className="font-semibold">Currently checked out</h3>
+              <p className="text-xs text-muted-foreground">Confirm an item has physically returned before marking it available.</p>
+            </div>
+            {checkedOutAccessories.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No checked-out accessories.</p>
+            ) : (
+              <div className="space-y-2">
+                {checkedOutAccessories.map((item) => (
+                  <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
+                    <div className="min-w-0">
+                      <div className="font-medium">{item.name} <span className="font-mono text-xs text-muted-foreground">({item.id})</span></div>
+                      <div className="text-xs text-muted-foreground">
+                        {item.accessorySystemColor ? `${item.accessorySystemColor} system · ` : ""}
+                        {item.checkedOutBy || "Unknown tech"}
+                        {item.workOrder ? ` · WO ${item.workOrder}` : " · Retained"}
+                        {item.accessoryHomeLocation ? ` · From ${item.accessoryHomeLocation}` : ""}
+                      </div>
+                      {item.accessoryNote && <div className="mt-1 text-xs text-amber-700">{item.accessoryNote}</div>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleReturn(item)}
+                      disabled={returnAccessory.isPending}
+                    >
+                      Confirm Return
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 function SystemCheckInModal({ 
   isOpen, 
   onClose,
@@ -1674,11 +2006,27 @@ function SystemCheckInModal({
   onClose: () => void;
   toolboxId?: string;
 }) {
-  const { data: equipment = [] } = useEquipment(toolboxId);
+  const { data: equipment = [] } = useEquipment(undefined, isOpen ? 10_000 : false);
+  const { data: registry } = useQuery({
+    queryKey: ["platform-registry"],
+    queryFn: api.registry.get,
+  });
   const checkinByWorkOrder = useCheckinByWorkOrder();
   const [step, setStep] = useState<1 | 2>(1);
   const [workOrder, setWorkOrder] = useState("");
-  const [reports, setReports] = useState<Record<string, { isBroken: boolean; notes: string }>>({});
+  const [reports, setReports] = useState<Record<string, {
+    isBroken: boolean;
+    notes: string;
+    keepCheckedOut?: boolean;
+    accessoryNote?: string;
+    accessoryReturned?: boolean;
+  }>>({});
+  const toolboxById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox]));
+  const warehouseById = new Map((registry?.warehouses ?? []).map((warehouse) => [warehouse.id, warehouse]));
+  const isAccessory = (item: Equipment) => {
+    const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+    return toolbox ? warehouseById.get(toolbox.warehouseId)?.isAccessoryWarehouse === true : false;
+  };
 
   // Derived state
   const itemsInWO = equipment.filter(e => e.workOrder === workOrder && e.status === 'checked_out');
@@ -1693,8 +2041,24 @@ function SystemCheckInModal({
   };
 
   const handleSubmit = () => {
-    checkinByWorkOrder.mutate({ workOrder, itemReports: reports });
-    onClose();
+    for (const item of itemsInWO.filter(isAccessory)) {
+      const report = reports[item.id];
+      if (report?.keepCheckedOut && !report.accessoryNote?.trim()) {
+        toast.error(`Add a note explaining why ${item.name} is staying checked out.`);
+        return;
+      }
+      if (!report?.keepCheckedOut && report?.accessoryReturned !== true) {
+        toast.error(`Confirm ${item.name} was physically returned or choose to keep it checked out.`);
+        return;
+      }
+    }
+    checkinByWorkOrder.mutate(
+      { workOrder, itemReports: reports },
+      {
+        onSuccess: onClose,
+        onError: (error) => toast.error(error instanceof Error ? error.message : "Failed to check in equipment."),
+      }
+    );
   };
 
   const toggleBroken = (id: string) => {
@@ -1791,6 +2155,8 @@ function SystemCheckInModal({
                  <div className="space-y-3">
                     {itemsInWO.map(item => {
                         const isBroken = reports[item.id]?.isBroken;
+                        const accessory = isAccessory(item);
+                        const keepCheckedOut = reports[item.id]?.keepCheckedOut ?? false;
 
                         return (
                             <div key={item.id} className={cn(
@@ -1835,6 +2201,72 @@ function SystemCheckInModal({
                                         />
                                     </motion.div>
                                 )}
+                                {accessory && (
+                                  <div className="space-y-3 rounded-md border border-primary/20 bg-primary/5 p-3">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div>
+                                        <Label htmlFor={`keep-accessory-${item.id}`} className="text-sm font-medium">
+                                          Keep this accessory checked out?
+                                        </Label>
+                                        <p className="text-xs text-muted-foreground">
+                                          It will remain unavailable after this work order is checked in.
+                                        </p>
+                                      </div>
+                                      <Switch
+                                        id={`keep-accessory-${item.id}`}
+                                        checked={keepCheckedOut}
+                                        disabled={isBroken}
+                                        onCheckedChange={(checked) => setReports((previous) => ({
+                                          ...previous,
+                                          [item.id]: {
+                                            ...previous[item.id],
+                                            isBroken: false,
+                                            notes: previous[item.id]?.notes ?? "",
+                                            keepCheckedOut: checked,
+                                            accessoryReturned: false,
+                                          },
+                                        }))}
+                                      />
+                                    </div>
+                                    {keepCheckedOut ? (
+                                      <div className="space-y-1">
+                                        <Label htmlFor={`accessory-note-${item.id}`} className="text-xs">Where is it staying, or why is it still needed? *</Label>
+                                        <Textarea
+                                          id={`accessory-note-${item.id}`}
+                                          value={reports[item.id]?.accessoryNote ?? ""}
+                                          onChange={(event) => setReports((previous) => ({
+                                            ...previous,
+                                            [item.id]: {
+                                              ...previous[item.id],
+                                              isBroken: false,
+                                              notes: previous[item.id]?.notes ?? "",
+                                              keepCheckedOut: true,
+                                              accessoryNote: event.target.value,
+                                            },
+                                          }))}
+                                          placeholder="This note stays with the accessory until it is returned."
+                                        />
+                                      </div>
+                                    ) : (
+                                      <label className="flex cursor-pointer items-start gap-2 text-xs">
+                                        <Checkbox
+                                          checked={reports[item.id]?.accessoryReturned ?? false}
+                                          onCheckedChange={(checked) => setReports((previous) => ({
+                                            ...previous,
+                                            [item.id]: {
+                                              ...previous[item.id],
+                                              isBroken: previous[item.id]?.isBroken ?? false,
+                                              notes: previous[item.id]?.notes ?? "",
+                                              keepCheckedOut: false,
+                                              accessoryReturned: checked === true,
+                                            },
+                                          }))}
+                                        />
+                                        <span>I confirm this accessory was physically returned to {item.accessoryHomeLocation || item.location || "its checkout location"}.</span>
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                         );
                     })}
@@ -1848,8 +2280,9 @@ function SystemCheckInModal({
                   <Button 
                     className="flex-[2] h-12 text-lg font-bold" 
                     onClick={handleSubmit}
+                    disabled={checkinByWorkOrder.isPending}
                   >
-                    Complete Check In
+                    {checkinByWorkOrder.isPending ? "Checking In..." : "Complete Check In"}
                   </Button>
                </div>
             </div>
@@ -1864,6 +2297,7 @@ function AddEquipmentModal({
   isOpen, 
   onClose,
   toolboxId,
+  isAccessoryWarehouse = false,
   locationOptions,
   systemColorOptions,
   onAddLocation,
@@ -1871,6 +2305,7 @@ function AddEquipmentModal({
   isOpen: boolean; 
   onClose: () => void;
   toolboxId?: string;
+  isAccessoryWarehouse?: boolean;
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
@@ -1882,6 +2317,7 @@ function AddEquipmentModal({
     category: '',
     variant: '',
     systemColor: '',
+    accessorySystemLabels: '',
     location: 'Shop',
     status: 'available',
     dueDate: ''
@@ -1914,6 +2350,10 @@ function AddEquipmentModal({
       category: formData.category,
       variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
+      accessorySystemLabels: formData.accessorySystemLabels
+        .split(",")
+        .map((label) => label.trim())
+        .filter((label, index, labels) => label && labels.indexOf(label) === index),
       originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
       status: 'available',
@@ -1921,7 +2361,7 @@ function AddEquipmentModal({
     }, {
       onSuccess: () => {
         toast.success(`Equipment ${formData.id} added successfully`);
-        setFormData({ id: '', name: '', category: '', variant: '', systemColor: '', location: 'Shop', status: 'available', dueDate: '' });
+        setFormData({ id: '', name: '', category: '', variant: '', systemColor: '', accessorySystemLabels: '', location: 'Shop', status: 'available', dueDate: '' });
         onClose();
       },
       onError: (error) => {
@@ -2006,6 +2446,18 @@ function AddEquipmentModal({
                   </SelectContent>
               </Select>
             </div>
+
+            {isAccessoryWarehouse && (
+               <div className="space-y-2">
+                 <Label>Accessory system labels (Optional)</Label>
+                 <Input
+                   value={formData.accessorySystemLabels}
+                   onChange={(event) => setFormData((prev) => ({ ...prev, accessorySystemLabels: event.target.value }))}
+                   placeholder="Use warehouse defaults, or enter labels separated by commas"
+                 />
+                 <p className="text-xs text-muted-foreground">Item labels override the accessory warehouse defaults.</p>
+               </div>
+            )}
 
             <div className="space-y-2">
               <Label>Location</Label>
@@ -2343,6 +2795,8 @@ function AdminImportModal({
     const checkedOutByIndex = headerMap.checkedoutby ?? headerMap.checked_out_by ?? headerMap["checked out by"];
     const checkedOutAtIndex = headerMap.checkedoutat ?? headerMap.checked_out_at ?? headerMap["checked out at"];
     const notesIndex = headerMap.notes;
+    const accessorySystemLabelsIndex =
+      headerMap.accessorysystemlabels ?? headerMap.accessory_system_labels ?? headerMap["accessory system labels"];
     const toolboxIndex = headerMap.toolbox ?? headerMap.toolboxslug ?? headerMap.toolbox_slug ?? headerMap["toolbox slug"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
@@ -2418,6 +2872,9 @@ function AdminImportModal({
         checkedOutBy: readOptional(checkedOutByIndex),
         checkedOutAt,
         notes: readOptional(notesIndex),
+        accessorySystemLabels: accessorySystemLabelsIndex === undefined
+          ? undefined
+          : (values[accessorySystemLabelsIndex] ?? "").split("|").map((label) => label.trim()).filter(Boolean),
         toolboxId: hasHeader && toolboxIndex !== undefined
           ? (toolboxValue ? matchedToolbox?.id : null)
           : toolboxId,
@@ -2500,7 +2957,7 @@ function AdminImportModal({
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>Import creates new equipment and updates matching IDs. A toolbox column routes each row to the matching toolbox slug.</p>
             <p>For a full snapshot, export with All toolboxes selected. Without a toolbox column, rows go to the currently selected toolbox.</p>
-            <p className="font-mono text-xs text-foreground/70">toolbox,id,name,category,variant,systemColor,location,Due Date</p>
+            <p className="font-mono text-xs text-foreground/70">toolbox,id,name,category,variant,systemColor,location,Due Date,accessorySystemLabels (pipe-separated)</p>
           </div>
 
           <div className="space-y-3">
@@ -4002,6 +4459,12 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [isSystemCheckoutOpen, setIsSystemCheckoutOpen] = useState(false);
   const [checkoutPreset, setCheckoutPreset] = useState<{ systemColor: string; valveNumber?: string | null } | null>(null);
   const [isSystemCheckInOpen, setIsSystemCheckInOpen] = useState(false);
+  const [isAccessoryCheckoutOpen, setIsAccessoryCheckoutOpen] = useState(false);
+  const [accessoryCheckoutContext, setAccessoryCheckoutContext] = useState<{
+    workOrder?: string;
+    systemColor?: string;
+    techName?: string;
+  }>({});
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isBrandingOpen, setIsBrandingOpen] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(adminEnabled);
@@ -4065,6 +4528,13 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   const activeOutageLocations = activeOutage?.locations ?? [];
   const enabledToolboxes = (registry?.toolboxes ?? []).filter((toolbox) => toolbox.enabled);
+  const isAccessoryWarehouseToolbox = (toolboxId?: string | null) => {
+    if (!toolboxId) return false;
+    const toolbox = registry?.toolboxes.find((entry) => entry.id === toolboxId);
+    return registry?.warehouses.some(
+      (warehouse) => warehouse.id === toolbox?.warehouseId && warehouse.isAccessoryWarehouse
+    ) ?? false;
+  };
   
   const stats = {
     total: equipment.length,
@@ -5100,6 +5570,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       "checkedOutBy",
       "checkedOutAt",
       "notes",
+      "accessorySystemLabels",
     ];
     const rows = equipment.map((item) => [
       toolboxSlugById.get(item.toolboxId ?? "") ?? item.toolboxId ?? "",
@@ -5119,6 +5590,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       item.checkedOutBy ?? "",
       item.checkedOutAt ? format(new Date(item.checkedOutAt), "MM/dd/yyyy") : "",
       item.notes ?? "",
+      item.accessorySystemLabels.join("|"),
     ]);
     const lines = [
       headers.map(csvEscape).join(","),
@@ -5932,6 +6404,22 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                             Stage
                           </Button>
                         )}
+                        {group.systemColor && group.workOrder !== "-" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setAccessoryCheckoutContext({
+                                workOrder: group.workOrder,
+                                systemColor: group.systemColor ?? undefined,
+                                techName: group.tech,
+                              });
+                              setIsAccessoryCheckoutOpen(true);
+                            }}
+                          >
+                            Add accessories
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -6287,6 +6775,16 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               <ClipboardCheck className="w-8 h-8" />
               SYSTEM CHECK IN
           </button>
+          <button
+              onClick={() => {
+                setAccessoryCheckoutContext({});
+                setIsAccessoryCheckoutOpen(true);
+              }}
+              className="col-span-2 rounded-xl border border-border bg-card py-4 font-bold text-base shadow-sm hover:bg-muted/30 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+          >
+              <PackageCheck className="w-5 h-5" />
+              ACCESSORY CHECKOUT / RETURN
+          </button>
         </div>
         </>
         )}
@@ -6518,6 +7016,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)}
             toolboxId={selectedToolboxId}
+            isAccessoryWarehouse={isAccessoryWarehouseToolbox(selectedToolboxId)}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}
@@ -6560,6 +7059,15 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             isOpen={isSystemCheckInOpen}
             toolboxId={selectedToolboxId}
             onClose={() => setIsSystemCheckInOpen(false)}
+          />
+        )}
+        {isAccessoryCheckoutOpen && (
+          <AccessoryCheckoutModal
+            isOpen={isAccessoryCheckoutOpen}
+            onClose={() => setIsAccessoryCheckoutOpen(false)}
+            initialWorkOrder={accessoryCheckoutContext.workOrder}
+            initialSystemColor={accessoryCheckoutContext.systemColor}
+            initialTechName={accessoryCheckoutContext.techName}
           />
         )}
         {isTransferOpen && (
@@ -6663,6 +7171,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 isOpen={!!selectedEquipmentId} 
                 onClose={() => setSelectedEquipmentId(null)}
                 canManageEquipment={canManageEquipment}
+                isAccessoryWarehouse={isAccessoryWarehouseToolbox(selectedEquipment?.toolboxId)}
                 allEquipment={equipment}
                 locationOptions={locationOptions}
                 systemColorOptions={systemColorOptions}

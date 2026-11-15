@@ -233,6 +233,7 @@ export const api = {
     checkoutSystem: async (params: {
       systemColor: string;
       equipmentIds: string[];
+      accessoryIds?: string[];
       workOrder: string;
       techName: string;
       valveNumber?: string;
@@ -246,9 +247,59 @@ export const api = {
       return res.json();
     },
 
+    checkoutAccessories: async (params: {
+      equipmentIds: string[];
+      workOrder: string;
+      techName: string;
+      systemColor?: string;
+      valveNumber?: string;
+    }): Promise<Equipment[]> => {
+      const res = await fetch(`${API_BASE}/equipment/checkout/accessories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      if (!res.ok) {
+        let message = "Failed to check out accessories";
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep the default error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      return res.json();
+    },
+
+    returnAccessory: async (id: string): Promise<Equipment> => {
+      const res = await fetch(`${API_BASE}/equipment/${encodeURIComponent(id)}/accessory-return`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      if (!res.ok) {
+        let message = "Failed to return accessory";
+        try {
+          const body = await res.json();
+          if (body?.error) message = body.error;
+        } catch {
+          // Keep the default error when the response is not JSON.
+        }
+        throw new Error(message);
+      }
+      return res.json();
+    },
+
     checkinByWorkOrder: async (params: {
       workOrder: string;
-      itemReports: Record<string, { isBroken: boolean; notes: string }>;
+      itemReports: Record<string, {
+        isBroken: boolean;
+        notes: string;
+        keepCheckedOut?: boolean;
+        accessoryNote?: string;
+        accessoryReturned?: boolean;
+      }>;
     }): Promise<Equipment[]> => {
       const res = await fetch(`${API_BASE}/equipment/checkin/workorder`, {
         method: 'POST',

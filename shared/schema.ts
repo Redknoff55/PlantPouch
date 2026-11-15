@@ -32,6 +32,10 @@ export const equipment = pgTable("equipment", {
   workOrder: text("work_order"),
   checkedOutBy: text("checked_out_by"),
   checkedOutAt: timestamp("checked_out_at"),
+  accessorySystemLabels: jsonb("accessory_system_labels").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  accessoryHomeLocation: text("accessory_home_location"),
+  accessorySystemColor: text("accessory_system_color"),
+  accessoryNote: text("accessory_note"),
   dueDate: timestamp("due_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -52,6 +56,11 @@ export const warehouses = pgTable("warehouses", {
   slug: text("slug").notNull().unique(),
   description: text("description"),
   enabled: boolean("enabled").notNull().default(true),
+  isAccessoryWarehouse: boolean("is_accessory_warehouse").notNull().default(false),
+  defaultAccessorySystemLabels: jsonb("default_accessory_system_labels")
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -167,6 +176,7 @@ export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
   name: z.string().trim().min(1),
   slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   enabled: z.boolean().default(true),
+  defaultAccessorySystemLabels: z.array(z.string().trim().min(1)).default([]),
 });
 
 export const insertToolboxSchema = createInsertSchema(toolboxes).omit({

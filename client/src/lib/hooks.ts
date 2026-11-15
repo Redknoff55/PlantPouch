@@ -54,6 +54,7 @@ export function useCheckoutSystem() {
     mutationFn: (params: {
       systemColor: string;
       equipmentIds: string[];
+      accessoryIds?: string[];
       workOrder: string;
       techName: string;
       valveNumber?: string;
@@ -70,11 +71,43 @@ export function useCheckinByWorkOrder() {
   return useMutation({
     mutationFn: (params: {
       workOrder: string;
-      itemReports: Record<string, { isBroken: boolean; notes: string }>;
+      itemReports: Record<string, {
+        isBroken: boolean;
+        notes: string;
+        keepCheckedOut?: boolean;
+        accessoryNote?: string;
+        accessoryReturned?: boolean;
+      }>;
     }) => api.equipment.checkinByWorkOrder(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['equipment'] });
       queryClient.invalidateQueries({ queryKey: ['staged-systems'] });
+    },
+  });
+}
+
+export function useCheckoutAccessories() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      equipmentIds: string[];
+      workOrder: string;
+      techName: string;
+      systemColor?: string;
+      valveNumber?: string;
+    }) => api.equipment.checkoutAccessories(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
+    },
+  });
+}
+
+export function useReturnAccessory() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.equipment.returnAccessory(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['equipment'] });
     },
   });
 }

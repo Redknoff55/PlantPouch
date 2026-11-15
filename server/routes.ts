@@ -11,6 +11,7 @@ import {
   insertWarehouseSchema,
   insertToolboxSchema,
   insertPouchSchema,
+  type Equipment,
   type InsertEquipment,
 } from "@shared/schema";
 import { brandingSchema } from "@shared/branding";
@@ -47,6 +48,10 @@ const parseDueDateString = (value: string) => {
 const isCheckoutNote = (notes?: string | null) =>
   typeof notes === "string" && /^Checked out under WO\b/i.test(notes.trim());
 
+const isRepairLocation = (location?: string | null) =>
+  ["waiting on repairs", "sent for repairs", "repairs", "out for repair", "out for repairs"]
+    .includes((location ?? "").trim().toLowerCase());
+
 const brandingPath = process.env.BRANDING_PATH || path.join(process.cwd(), "data", "branding.json");
 
 const loadBrandingOverrides = async () => {
@@ -68,6 +73,33 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  const getAccessoryInventoryContext = async () => {
+    const [warehouses, toolboxes] = await Promise.all([
+      storage.getAllWarehouses(),
+      storage.getAllToolboxes(),
+    ]);
+    const warehouseById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]));
+    const toolboxById = new Map(toolboxes.map((toolbox) => [toolbox.id, toolbox]));
+    const getWarehouseForEquipment = (item: Equipment) => {
+      const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+      return toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+    };
+    const isAccessory = (item: Equipment) => getWarehouseForEquipment(item)?.isAccessoryWarehouse === true;
+    const compatibleLabels = (item: Equipment) => {
+      if (item.accessorySystemLabels.length > 0) return item.accessorySystemLabels;
+      return getWarehouseForEquipment(item)?.defaultAccessorySystemLabels ?? [];
+    };
+    return { isAccessory, compatibleLabels };
+  };
+  const isCalibrationCurrent = (item: Equipment) => {
+    if (!item.dueDate) return true;
+    const dueDate = new Date(item.dueDate);
+    if (Number.isNaN(dueDate.getTime())) return false;
+    const dueDay = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return dueDay > todayStart;
+  };
 
   app.get("/api/registry", async (_req, res) => {
     try {
@@ -321,6 +353,9 @@ export async function registerRoutes(
       const validatedData = insertEquipmentSchema.parse(payload);
       const existing = await storage.getEquipment(validatedData.id);
       if (existing) {
+        if (req.body?.accessorySystemLabels === undefined) {
+          validatedData.accessorySystemLabels = existing.accessorySystemLabels;
+        }
         const equipment = await storage.updateEquipment(existing.id, validatedData);
         if (!equipment) return res.status(404).json({ error: "Equipment not found" });
         return res.json({ action: "updated", equipment });
@@ -466,6 +501,117 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/equipment/checkout/accessories", async (req, res) => {
+    try {
+      const { equipmentIds, workOrder, techName, systemColor, valveNumber } = z.object({
+        equipmentIds: z.array(z.string().min(1)).min(1),
+        workOrder: z.string().trim().min(1),
+        techName: z.string().trim().min(1),
+        systemColor: z.string().trim().min(1).optional(),
+        valveNumber: z.string().optional(),
+      }).parse(req.body);
+      if (new Set(equipmentIds).size !== equipmentIds.length) {
+        return res.status(400).json({ error: "Accessories cannot be selected more than once." });
+      }
+
+      const accessoryContext = await getAccessoryInventoryContext();
+      const selectedItems = await Promise.all(equipmentIds.map((id) => storage.getEquipment(id)));
+      if (selectedItems.some((item) => !item || !accessoryContext.isAccessory(item))) {
+        return res.status(400).json({ error: "One or more selected items are not in an accessory warehouse." });
+      }
+      const normalizedSystemColor = systemColor?.trim().toLowerCase();
+      for (const item of selectedItems) {
+        if (!item) continue;
+        if (
+          item.status !== "available" ||
+          isRepairLocation(item.location) ||
+          !isCalibrationCurrent(item)
+        ) {
+          return res.status(409).json({ error: `${item.id} is not available or is out of calibration.` });
+        }
+        if (normalizedSystemColor) {
+          const compatibleLabels = accessoryContext.compatibleLabels(item);
+          if (!compatibleLabels.some((label) => label.trim().toLowerCase() === normalizedSystemColor)) {
+            return res.status(400).json({ error: `${item.id} is not tagged for ${systemColor}.` });
+          }
+        }
+      }
+
+      const checkedOutAt = new Date();
+      const valveSuffix = valveNumber?.trim() ? `, Valve # ${valveNumber.trim()}` : "";
+      const checkedOut = await Promise.all(selectedItems.map(async (item) => {
+        if (!item) return undefined;
+        const updated = await storage.updateEquipment(item.id, {
+          status: "checked_out",
+          workOrder,
+          checkedOutBy: techName,
+          checkedOutAt,
+          accessoryHomeLocation: item.location || "Shop",
+          accessorySystemColor: systemColor ?? null,
+          accessoryNote: null,
+          notes: `Checked out as an accessory under WO ${workOrder}${valveSuffix} by ${techName}`,
+        });
+        await storage.addEquipmentHistory({
+          equipmentId: item.id,
+          action: "accessory_check_out",
+          details: `Checked out${systemColor ? ` for ${systemColor} System` : ""}${valveSuffix} by ${techName}`,
+          workOrder,
+        });
+        return updated;
+      }));
+      res.json(checkedOut.filter((item): item is NonNullable<typeof item> => !!item));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("Error checking out accessories:", error);
+      res.status(500).json({ error: "Failed to check out accessories" });
+    }
+  });
+
+  app.post("/api/equipment/:id/accessory-return", async (req, res) => {
+    try {
+      const { confirmed } = z.object({ confirmed: z.literal(true) }).parse(req.body);
+      if (!confirmed) return res.status(400).json({ error: "Confirm the accessory has been physically returned." });
+      const existing = await storage.getEquipment(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Equipment not found" });
+      const accessoryContext = await getAccessoryInventoryContext();
+      if (!accessoryContext.isAccessory(existing)) {
+        return res.status(400).json({ error: "Equipment is not in an accessory warehouse." });
+      }
+      if (existing.status !== "checked_out") {
+        return res.status(409).json({ error: "Accessory is not checked out." });
+      }
+
+      const workOrder = existing.workOrder ?? undefined;
+      const location = existing.accessoryHomeLocation || existing.location || "Shop";
+      const returned = await storage.updateEquipment(existing.id, {
+        status: "available",
+        workOrder: null,
+        checkedOutBy: null,
+        checkedOutAt: null,
+        location,
+        accessoryHomeLocation: null,
+        accessorySystemColor: null,
+        accessoryNote: null,
+        notes: `Physically returned to ${location}`,
+      });
+      await storage.addEquipmentHistory({
+        equipmentId: existing.id,
+        action: "accessory_return",
+        details: `Physically returned to ${location}`,
+        workOrder,
+      });
+      res.json(returned);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("Error returning accessory:", error);
+      res.status(500).json({ error: "Failed to return accessory" });
+    }
+  });
+
   // Delete equipment
   app.delete("/api/equipment/:id", async (req, res) => {
     try {
@@ -483,10 +629,41 @@ export async function registerRoutes(
   // System checkout
   app.post("/api/equipment/checkout/system", async (req, res) => {
     try {
-      const { systemColor, equipmentIds, workOrder, techName, valveNumber } = req.body;
-      
-      if (!systemColor || !equipmentIds || !workOrder || !techName) {
-        return res.status(400).json({ error: "Missing required fields" });
+      const { systemColor, equipmentIds, accessoryIds, workOrder, techName, valveNumber } = z.object({
+        systemColor: z.string().trim().min(1),
+        equipmentIds: z.array(z.string().min(1)).min(1),
+        accessoryIds: z.array(z.string().min(1)).default([]),
+        workOrder: z.string().trim().min(1),
+        techName: z.string().trim().min(1),
+        valveNumber: z.string().optional(),
+      }).parse(req.body);
+
+      const equipmentToCheckout = await Promise.all(equipmentIds.map((id) => storage.getEquipment(id)));
+      if (equipmentToCheckout.some((item) => !item)) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+      const accessoryContext = await getAccessoryInventoryContext();
+      if (equipmentToCheckout.some((item) => item && accessoryContext.isAccessory(item))) {
+        return res.status(400).json({ error: "Accessory equipment must be checked out as an accessory." });
+      }
+      const accessoriesToCheckout = await Promise.all(accessoryIds.map((id) => storage.getEquipment(id)));
+      if (accessoriesToCheckout.some((item) => !item || !accessoryContext.isAccessory(item))) {
+        return res.status(400).json({ error: "One or more selected accessories are invalid." });
+      }
+      const normalizedSystemColor = systemColor.trim().toLowerCase();
+      for (const accessory of accessoriesToCheckout) {
+        if (!accessory) continue;
+        if (
+          accessory.status !== "available" ||
+          isRepairLocation(accessory.location) ||
+          !isCalibrationCurrent(accessory)
+        ) {
+          return res.status(409).json({ error: `${accessory.id} is not available or is out of calibration.` });
+        }
+        const compatibleLabels = accessoryContext.compatibleLabels(accessory);
+        if (!compatibleLabels.some((label) => label.trim().toLowerCase() === normalizedSystemColor)) {
+          return res.status(400).json({ error: `${accessory.id} is not tagged for ${systemColor}.` });
+        }
       }
 
       const checkedOutAt = new Date();
@@ -543,6 +720,27 @@ export async function registerRoutes(
         })
       );
 
+      const checkedOutAccessories = await Promise.all(accessoriesToCheckout.map(async (item) => {
+        if (!item) return undefined;
+        const updated = await storage.updateEquipment(item.id, {
+          status: "checked_out",
+          workOrder,
+          checkedOutBy: techName,
+          checkedOutAt,
+          accessoryHomeLocation: item.location || "Shop",
+          accessorySystemColor: systemColor,
+          accessoryNote: null,
+          notes: `Checked out as an accessory for ${systemColor} System under WO ${workOrder} by ${techName}`,
+        });
+        await storage.addEquipmentHistory({
+          equipmentId: item.id,
+          action: "accessory_check_out",
+          details: `Checked out as an accessory for ${systemColor} System${valveSuffix} by ${techName}`,
+          workOrder,
+        });
+        return updated;
+      }));
+
       if (computerId) {
         await storage.deleteStagedSystem(systemColor);
         const bagLabel =
@@ -556,8 +754,11 @@ export async function registerRoutes(
         });
       }
 
-      res.json(updatedEquipment);
+      res.json([...updatedEquipment, ...checkedOutAccessories.filter((item): item is NonNullable<typeof item> => !!item)]);
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.message });
+      }
       console.error("Error checking out system:", error);
       res.status(500).json({ error: "Failed to check out system" });
     }
@@ -566,17 +767,38 @@ export async function registerRoutes(
   // System check-in by work order
   app.post("/api/equipment/checkin/workorder", async (req, res) => {
     try {
-      const { workOrder, itemReports } = req.body;
-      
-      if (!workOrder || !itemReports) {
-        return res.status(400).json({ error: "Missing required fields" });
-      }
+      const { workOrder, itemReports } = z.object({
+        workOrder: z.string().trim().min(1),
+        itemReports: z.record(z.object({
+          isBroken: z.boolean().default(false),
+          notes: z.string().optional(),
+          keepCheckedOut: z.boolean().optional(),
+          accessoryNote: z.string().optional(),
+          accessoryReturned: z.boolean().optional(),
+        })),
+      }).parse(req.body);
 
       // Get all equipment for this work order
       const equipment = await storage.getEquipmentByWorkOrder(workOrder);
       
       if (equipment.length === 0) {
         return res.status(404).json({ error: "No equipment found for this work order" });
+      }
+
+      const accessoryContext = await getAccessoryInventoryContext();
+      for (const item of equipment) {
+        if (!accessoryContext.isAccessory(item)) continue;
+        const report = itemReports[item.id];
+        if (report?.keepCheckedOut) {
+          if (report.isBroken) {
+            return res.status(400).json({ error: `${item.id} cannot be kept checked out when reported broken.` });
+          }
+          if (!report.accessoryNote?.trim()) {
+            return res.status(400).json({ error: `Add a note explaining why ${item.id} is staying checked out.` });
+          }
+        } else if (report?.accessoryReturned !== true) {
+          return res.status(400).json({ error: `Confirm ${item.id} was physically returned or choose to keep it checked out.` });
+        }
       }
 
       const bagColors = new Set<string>();
@@ -590,6 +812,26 @@ export async function registerRoutes(
       const updatedEquipment = await Promise.all(
         equipment.map(async (item) => {
           const report = itemReports[item.id] || { isBroken: false, notes: '' };
+          const isAccessory = accessoryContext.isAccessory(item);
+          if (isAccessory && report.keepCheckedOut) {
+            const note = report.accessoryNote?.trim() ?? "";
+            const updated = await storage.updateEquipment(item.id, {
+              status: "checked_out",
+              workOrder: null,
+              checkedOutBy: item.checkedOutBy,
+              checkedOutAt: item.checkedOutAt,
+              accessorySystemColor: null,
+              accessoryNote: note,
+              notes: `Kept checked out after WO ${workOrder}: ${note}`,
+            });
+            await storage.addEquipmentHistory({
+              equipmentId: item.id,
+              action: "accessory_retained",
+              details: `Kept checked out after WO ${workOrder}: ${note}`,
+              workOrder,
+            });
+            return updated;
+          }
           const newStatus = report.isBroken ? 'broken' : 'available';
           const action = report.isBroken ? 'report_broken' : 'check_in';
           const baseNotes =
@@ -601,7 +843,7 @@ export async function registerRoutes(
             computerColor = item.systemColor || "Unassigned";
             computerLocation = item.location || "Shop";
             checkoutTech = item.checkedOutBy || "Unknown tech";
-          } else if (item.systemColor) {
+          } else if (!isAccessory && item.systemColor) {
             bagColors.add(item.systemColor);
           }
 
@@ -614,7 +856,12 @@ export async function registerRoutes(
             workOrder: null,
             checkedOutBy: null,
             checkedOutAt: null,
-            location: report.isBroken ? "Waiting on Repairs" : item.location,
+            location: report.isBroken ? "Waiting on Repairs" : isAccessory
+              ? item.accessoryHomeLocation || item.location
+              : item.location,
+            accessoryHomeLocation: isAccessory ? null : item.accessoryHomeLocation,
+            accessorySystemColor: isAccessory ? null : item.accessorySystemColor,
+            accessoryNote: isAccessory ? null : item.accessoryNote,
             notes,
           });
 

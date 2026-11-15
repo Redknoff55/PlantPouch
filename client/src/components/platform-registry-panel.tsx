@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { InsertPouch, InsertToolbox } from "@shared/schema";
+import type { InsertPouch, InsertToolbox, Warehouse } from "@shared/schema";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +23,10 @@ export default function PlatformRegistryPanel() {
     queryKey: ["platform-registry"],
     queryFn: api.registry.get,
   });
+  const { data: systems = [] } = useQuery({
+    queryKey: ["systems", "all"],
+    queryFn: () => api.systems.getAll(),
+  });
   const [warehouseName, setWarehouseName] = useState("");
   const [toolboxName, setToolboxName] = useState("");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
@@ -30,10 +34,12 @@ export default function PlatformRegistryPanel() {
   const [selectedToolboxId, setSelectedToolboxId] = useState("");
   const [moduleType, setModuleType] = useState("custom");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [savingWarehouseId, setSavingWarehouseId] = useState<string | null>(null);
 
   const warehouses = data?.warehouses ?? [];
   const toolboxes = data?.toolboxes ?? [];
   const pouches = data?.pouches ?? [];
+  const systemLabels = Array.from(new Set(systems.map((system) => system.color))).sort();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["platform-registry"] });
 
   const handleCreateWarehouse = async () => {
@@ -41,7 +47,14 @@ export default function PlatformRegistryPanel() {
     if (!name) return;
     setIsSubmitting(true);
     try {
-      await api.registry.createWarehouse({ name, slug: slugify(name), description: null, enabled: true });
+      await api.registry.createWarehouse({
+        name,
+        slug: slugify(name),
+        description: null,
+        enabled: true,
+        isAccessoryWarehouse: false,
+        defaultAccessorySystemLabels: [],
+      });
       setWarehouseName("");
       await refresh();
       toast.success(`${name} warehouse created.`);
@@ -136,6 +149,26 @@ export default function PlatformRegistryPanel() {
     }
   };
 
+  const saveAccessoryWarehouse = async (
+    warehouse: Warehouse,
+    isAccessoryWarehouse: boolean,
+    defaultAccessorySystemLabels: string[]
+  ) => {
+    setSavingWarehouseId(warehouse.id);
+    try {
+      await api.registry.updateWarehouse(warehouse.id, {
+        isAccessoryWarehouse,
+        defaultAccessorySystemLabels,
+      });
+      await refresh();
+      toast.success(`${warehouse.name} accessory settings saved.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save accessory warehouse settings.");
+    } finally {
+      setSavingWarehouseId(null);
+    }
+  };
+
   return (
     <Card className="mb-6 border-primary/20">
       <CardHeader>
@@ -191,10 +224,85 @@ export default function PlatformRegistryPanel() {
               <RegistryList title="Toolboxes" emptyLabel="No toolboxes yet." items={toolboxes.map((item) => ({ ...item, parent: warehouses.find((warehouse) => warehouse.id === item.warehouseId)?.name }))} onToggle={(item) => toggle("toolbox", item.id, item.enabled)} onRemove={(item) => remove("toolbox", item.id, item.name)} onClaim={(item) => claimEquipment(item.id, item.name)} />
               <RegistryList title="Pouches" emptyLabel="No pouches yet." items={pouches.map((item) => ({ ...item, parent: toolboxes.find((toolbox) => toolbox.id === item.toolboxId)?.name }))} onToggle={(item) => toggle("pouch", item.id, item.enabled)} onRemove={(item) => remove("pouch", item.id, item.name)} />
             </div>
+            <section className="space-y-3 rounded-lg border border-border/60 p-3">
+              <div>
+                <h3 className="text-sm font-semibold">Accessory warehouses</h3>
+                <p className="text-xs text-muted-foreground">
+                  Mark warehouses that hold shared accessories and choose the system labels they serve. Equipment can override these defaults.
+                </p>
+              </div>
+              {warehouses.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Create a warehouse first.</p>
+              ) : (
+                warehouses.map((warehouse) => (
+                  <AccessoryWarehouseConfig
+                    key={warehouse.id}
+                    warehouse={warehouse}
+                    systemLabels={systemLabels}
+                    isSaving={savingWarehouseId === warehouse.id}
+                    onSave={saveAccessoryWarehouse}
+                  />
+                ))
+              )}
+            </section>
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function AccessoryWarehouseConfig({
+  warehouse,
+  systemLabels,
+  isSaving,
+  onSave,
+}: {
+  warehouse: Warehouse;
+  systemLabels: string[];
+  isSaving: boolean;
+  onSave: (warehouse: Warehouse, enabled: boolean, labels: string[]) => Promise<void>;
+}) {
+  const [enabled, setEnabled] = useState(warehouse.isAccessoryWarehouse);
+  const [labels, setLabels] = useState(warehouse.defaultAccessorySystemLabels ?? []);
+
+  useEffect(() => {
+    setEnabled(warehouse.isAccessoryWarehouse);
+    setLabels(warehouse.defaultAccessorySystemLabels ?? []);
+  }, [warehouse]);
+
+  return (
+    <div className="grid gap-3 rounded-md border border-border/60 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)_auto] sm:items-center">
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          aria-label={`Mark ${warehouse.name} as an accessory warehouse`}
+        />
+        <div>
+          <div className="text-sm font-medium">{warehouse.name}</div>
+          <div className="text-xs text-muted-foreground">{enabled ? "Accessory warehouse" : "Standard warehouse"}</div>
+        </div>
+      </div>
+      <select
+        multiple
+        value={labels}
+        onChange={(event) => setLabels(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
+        disabled={!enabled}
+        aria-label={`Default system labels for ${warehouse.name}`}
+        className="min-h-20 rounded-md border border-input bg-background px-2 py-1 text-xs disabled:opacity-50"
+      >
+        {systemLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+      </select>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={isSaving}
+        onClick={() => onSave(warehouse, enabled, labels)}
+      >
+        {isSaving ? "Saving..." : "Save"}
+      </Button>
+    </div>
   );
 }
 
