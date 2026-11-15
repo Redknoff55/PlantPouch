@@ -80,16 +80,26 @@ export async function registerRoutes(
     ]);
     const warehouseById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]));
     const toolboxById = new Map(toolboxes.map((toolbox) => [toolbox.id, toolbox]));
-    const getWarehouseForEquipment = (item: Equipment) => {
-      const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+    const getToolbox = (item: Equipment) =>
+      item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+    const getWarehouse = (item: Equipment) => {
+      const toolbox = getToolbox(item);
       return toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
     };
-    const isAccessory = (item: Equipment) => getWarehouseForEquipment(item)?.isAccessoryWarehouse === true;
-    const compatibleLabels = (item: Equipment) => {
-      if (item.accessorySystemLabels.length > 0) return item.accessorySystemLabels;
-      return getWarehouseForEquipment(item)?.defaultAccessorySystemLabels ?? [];
+    const isAccessory = (item: Equipment) =>
+      getToolbox(item)?.isAccessoryToolbox === true ||
+      !!item.accessoryHomeLocation ||
+      !!item.accessorySystemColor ||
+      !!item.accessoryNote;
+    const isEnabledAccessory = (item: Equipment, warehouseId?: string) => {
+      const toolbox = getToolbox(item);
+      const warehouse = getWarehouse(item);
+      return !!toolbox?.isAccessoryToolbox &&
+        toolbox.enabled &&
+        !!warehouse?.enabled &&
+        (!warehouseId || toolbox.warehouseId === warehouseId);
     };
-    return { isAccessory, compatibleLabels };
+    return { isAccessory, isEnabledAccessory, getToolbox };
   };
   const isCalibrationCurrent = (item: Equipment) => {
     if (!item.dueDate) return true;
@@ -515,11 +525,26 @@ export async function registerRoutes(
       }
 
       const accessoryContext = await getAccessoryInventoryContext();
-      const selectedItems = await Promise.all(equipmentIds.map((id) => storage.getEquipment(id)));
-      if (selectedItems.some((item) => !item || !accessoryContext.isAccessory(item))) {
-        return res.status(400).json({ error: "One or more selected items are not in an accessory warehouse." });
+      let targetWarehouseId: string | undefined;
+      if (systemColor) {
+        const activeWorkOrderItems = await storage.getEquipmentByWorkOrder(workOrder);
+        const checkedOutComputer = activeWorkOrderItems.find(
+          (item) =>
+            item.category === "Computer" &&
+            item.systemColor?.trim().toLowerCase() === systemColor.trim().toLowerCase()
+        );
+        if (!checkedOutComputer) {
+          return res.status(400).json({ error: `No active ${systemColor} system checkout was found for WO ${workOrder}.` });
+        }
+        targetWarehouseId = accessoryContext.getToolbox(checkedOutComputer)?.warehouseId;
+        if (!targetWarehouseId) {
+          return res.status(400).json({ error: "The active system is not assigned to a warehouse." });
+        }
       }
-      const normalizedSystemColor = systemColor?.trim().toLowerCase();
+      const selectedItems = await Promise.all(equipmentIds.map((id) => storage.getEquipment(id)));
+      if (selectedItems.some((item) => !item || !accessoryContext.isEnabledAccessory(item, targetWarehouseId))) {
+        return res.status(400).json({ error: "Accessories must come from an enabled accessory toolbox in the system's warehouse." });
+      }
       for (const item of selectedItems) {
         if (!item) continue;
         if (
@@ -528,12 +553,6 @@ export async function registerRoutes(
           !isCalibrationCurrent(item)
         ) {
           return res.status(409).json({ error: `${item.id} is not available or is out of calibration.` });
-        }
-        if (normalizedSystemColor) {
-          const compatibleLabels = accessoryContext.compatibleLabels(item);
-          if (!compatibleLabels.some((label) => label.trim().toLowerCase() === normalizedSystemColor)) {
-            return res.status(400).json({ error: `${item.id} is not tagged for ${systemColor}.` });
-          }
         }
       }
 
@@ -577,7 +596,7 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ error: "Equipment not found" });
       const accessoryContext = await getAccessoryInventoryContext();
       if (!accessoryContext.isAccessory(existing)) {
-        return res.status(400).json({ error: "Equipment is not in an accessory warehouse." });
+        return res.status(400).json({ error: "Equipment is not in an accessory toolbox." });
       }
       if (existing.status !== "checked_out") {
         return res.status(409).json({ error: "Accessory is not checked out." });
@@ -646,11 +665,20 @@ export async function registerRoutes(
       if (equipmentToCheckout.some((item) => item && accessoryContext.isAccessory(item))) {
         return res.status(400).json({ error: "Accessory equipment must be checked out as an accessory." });
       }
-      const accessoriesToCheckout = await Promise.all(accessoryIds.map((id) => storage.getEquipment(id)));
-      if (accessoriesToCheckout.some((item) => !item || !accessoryContext.isAccessory(item))) {
-        return res.status(400).json({ error: "One or more selected accessories are invalid." });
+      if (new Set(accessoryIds).size !== accessoryIds.length) {
+        return res.status(400).json({ error: "Accessories cannot be selected more than once." });
       }
-      const normalizedSystemColor = systemColor.trim().toLowerCase();
+      const selectedComputer = equipmentToCheckout.find((item) => item?.category === "Computer");
+      const targetWarehouseId = selectedComputer
+        ? accessoryContext.getToolbox(selectedComputer)?.warehouseId
+        : undefined;
+      const accessoriesToCheckout = await Promise.all(accessoryIds.map((id) => storage.getEquipment(id)));
+      if (accessoryIds.length > 0 && !targetWarehouseId) {
+        return res.status(400).json({ error: "Select a system from a warehouse before adding accessories." });
+      }
+      if (accessoriesToCheckout.some((item) => !item || !accessoryContext.isEnabledAccessory(item, targetWarehouseId))) {
+        return res.status(400).json({ error: "Accessories must come from an enabled accessory toolbox in the system's warehouse." });
+      }
       for (const accessory of accessoriesToCheckout) {
         if (!accessory) continue;
         if (
@@ -659,10 +687,6 @@ export async function registerRoutes(
           !isCalibrationCurrent(accessory)
         ) {
           return res.status(409).json({ error: `${accessory.id} is not available or is out of calibration.` });
-        }
-        const compatibleLabels = accessoryContext.compatibleLabels(accessory);
-        if (!compatibleLabels.some((label) => label.trim().toLowerCase() === normalizedSystemColor)) {
-          return res.status(400).json({ error: `${accessory.id} is not tagged for ${systemColor}.` });
         }
       }
 

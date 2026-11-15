@@ -72,6 +72,7 @@ export const toolboxes = pgTable("toolboxes", {
   slug: text("slug").notNull(),
   description: text("description"),
   enabled: boolean("enabled").notNull().default(true),
+  isAccessoryToolbox: boolean("is_accessory_toolbox").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -188,6 +189,7 @@ export const insertToolboxSchema = createInsertSchema(toolboxes).omit({
   name: z.string().trim().min(1),
   slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   enabled: z.boolean().default(true),
+  isAccessoryToolbox: z.boolean().default(false),
 });
 
 export const insertPouchSchema = createInsertSchema(pouches).omit({

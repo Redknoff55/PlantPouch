@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { InsertPouch, InsertToolbox, Warehouse } from "@shared/schema";
+import type { InsertPouch, InsertToolbox, Toolbox } from "@shared/schema";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,10 +23,6 @@ export default function PlatformRegistryPanel() {
     queryKey: ["platform-registry"],
     queryFn: api.registry.get,
   });
-  const { data: systems = [] } = useQuery({
-    queryKey: ["systems", "all"],
-    queryFn: () => api.systems.getAll(),
-  });
   const [warehouseName, setWarehouseName] = useState("");
   const [toolboxName, setToolboxName] = useState("");
   const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
@@ -34,12 +30,11 @@ export default function PlatformRegistryPanel() {
   const [selectedToolboxId, setSelectedToolboxId] = useState("");
   const [moduleType, setModuleType] = useState("custom");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [savingWarehouseId, setSavingWarehouseId] = useState<string | null>(null);
+  const [savingToolboxId, setSavingToolboxId] = useState<string | null>(null);
 
   const warehouses = data?.warehouses ?? [];
   const toolboxes = data?.toolboxes ?? [];
   const pouches = data?.pouches ?? [];
-  const systemLabels = Array.from(new Set(systems.map((system) => system.color))).sort();
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["platform-registry"] });
 
   const handleCreateWarehouse = async () => {
@@ -76,6 +71,7 @@ export default function PlatformRegistryPanel() {
         slug: slugify(name),
         description: null,
         enabled: true,
+        isAccessoryToolbox: false,
       };
       await api.registry.createToolbox(payload);
       setToolboxName("");
@@ -149,23 +145,16 @@ export default function PlatformRegistryPanel() {
     }
   };
 
-  const saveAccessoryWarehouse = async (
-    warehouse: Warehouse,
-    isAccessoryWarehouse: boolean,
-    defaultAccessorySystemLabels: string[]
-  ) => {
-    setSavingWarehouseId(warehouse.id);
+  const saveAccessoryToolbox = async (toolbox: Toolbox, isAccessoryToolbox: boolean) => {
+    setSavingToolboxId(toolbox.id);
     try {
-      await api.registry.updateWarehouse(warehouse.id, {
-        isAccessoryWarehouse,
-        defaultAccessorySystemLabels,
-      });
+      await api.registry.updateToolbox(toolbox.id, { isAccessoryToolbox });
       await refresh();
-      toast.success(`${warehouse.name} accessory settings saved.`);
+      toast.success(`${toolbox.name} accessory setting saved.`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save accessory warehouse settings.");
+      toast.error(error instanceof Error ? error.message : "Failed to save accessory toolbox setting.");
     } finally {
-      setSavingWarehouseId(null);
+      setSavingToolboxId(null);
     }
   };
 
@@ -226,21 +215,21 @@ export default function PlatformRegistryPanel() {
             </div>
             <section className="space-y-3 rounded-lg border border-border/60 p-3">
               <div>
-                <h3 className="text-sm font-semibold">Accessory warehouses</h3>
+                <h3 className="text-sm font-semibold">Accessory toolboxes</h3>
                 <p className="text-xs text-muted-foreground">
-                  Mark warehouses that hold shared accessories and choose the system labels they serve. Equipment can override these defaults.
+                  Mark toolboxes such as M&amp;TE as shared accessory sources. During system checkout, available items in the marked toolbox within that system's warehouse are offered as optional accessories.
                 </p>
               </div>
-              {warehouses.length === 0 ? (
-                <p className="text-xs text-muted-foreground">Create a warehouse first.</p>
+              {toolboxes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Create a toolbox first.</p>
               ) : (
-                warehouses.map((warehouse) => (
-                  <AccessoryWarehouseConfig
-                    key={warehouse.id}
-                    warehouse={warehouse}
-                    systemLabels={systemLabels}
-                    isSaving={savingWarehouseId === warehouse.id}
-                    onSave={saveAccessoryWarehouse}
+                toolboxes.map((toolbox) => (
+                  <AccessoryToolboxConfig
+                    key={toolbox.id}
+                    toolbox={toolbox}
+                    warehouseName={warehouses.find((warehouse) => warehouse.id === toolbox.warehouseId)?.name ?? "Unknown warehouse"}
+                    isSaving={savingToolboxId === toolbox.id}
+                    onSave={saveAccessoryToolbox}
                   />
                 ))
               )}
@@ -252,53 +241,41 @@ export default function PlatformRegistryPanel() {
   );
 }
 
-function AccessoryWarehouseConfig({
-  warehouse,
-  systemLabels,
+function AccessoryToolboxConfig({
+  toolbox,
+  warehouseName,
   isSaving,
   onSave,
 }: {
-  warehouse: Warehouse;
-  systemLabels: string[];
+  toolbox: Toolbox;
+  warehouseName: string;
   isSaving: boolean;
-  onSave: (warehouse: Warehouse, enabled: boolean, labels: string[]) => Promise<void>;
+  onSave: (toolbox: Toolbox, enabled: boolean) => Promise<void>;
 }) {
-  const [enabled, setEnabled] = useState(warehouse.isAccessoryWarehouse);
-  const [labels, setLabels] = useState(warehouse.defaultAccessorySystemLabels ?? []);
+  const [enabled, setEnabled] = useState(toolbox.isAccessoryToolbox);
 
   useEffect(() => {
-    setEnabled(warehouse.isAccessoryWarehouse);
-    setLabels(warehouse.defaultAccessorySystemLabels ?? []);
-  }, [warehouse]);
+    setEnabled(toolbox.isAccessoryToolbox);
+  }, [toolbox]);
 
   return (
-    <div className="grid gap-3 rounded-md border border-border/60 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)_auto] sm:items-center">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 p-3">
       <div className="flex items-center gap-2">
         <Switch
           checked={enabled}
           onCheckedChange={setEnabled}
-          aria-label={`Mark ${warehouse.name} as an accessory warehouse`}
+          aria-label={`Mark ${toolbox.name} as an accessory toolbox`}
         />
         <div>
-          <div className="text-sm font-medium">{warehouse.name}</div>
-          <div className="text-xs text-muted-foreground">{enabled ? "Accessory warehouse" : "Standard warehouse"}</div>
+          <div className="text-sm font-medium">{toolbox.name}</div>
+          <div className="text-xs text-muted-foreground">in {warehouseName} · {enabled ? "Accessory source" : "Standard toolbox"}</div>
         </div>
       </div>
-      <select
-        multiple
-        value={labels}
-        onChange={(event) => setLabels(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
-        disabled={!enabled}
-        aria-label={`Default system labels for ${warehouse.name}`}
-        className="min-h-20 rounded-md border border-input bg-background px-2 py-1 text-xs disabled:opacity-50"
-      >
-        {systemLabels.map((label) => <option key={label} value={label}>{label}</option>)}
-      </select>
       <Button
         size="sm"
         variant="outline"
         disabled={isSaving}
-        onClick={() => onSave(warehouse, enabled, labels)}
+        onClick={() => onSave(toolbox, enabled)}
       >
         {isSaving ? "Saving..." : "Save"}
       </Button>

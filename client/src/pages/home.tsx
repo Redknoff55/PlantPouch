@@ -353,7 +353,6 @@ function EditEquipmentModal({
   onClose,
   locationOptions,
   systemColorOptions,
-  isAccessoryWarehouse = false,
   onAddLocation,
   onIdUpdated,
 }: {
@@ -362,7 +361,6 @@ function EditEquipmentModal({
   onClose: () => void;
   locationOptions: string[];
   systemColorOptions: string[];
-  isAccessoryWarehouse?: boolean;
   onAddLocation: (value: string) => void;
   onIdUpdated?: (newId: string) => void;
 }) {
@@ -373,7 +371,6 @@ function EditEquipmentModal({
     category: equipment.category,
     variant: equipment.variant ?? "",
     systemColor: equipment.systemColor ?? "",
-    accessorySystemLabels: equipment.accessorySystemLabels.join(", "),
     location: equipment.location ?? "Shop",
     dueDate: formatDueDateValue(equipment.dueDate),
   });
@@ -387,7 +384,6 @@ function EditEquipmentModal({
       category: equipment.category,
       variant: equipment.variant ?? "",
       systemColor: equipment.systemColor ?? "",
-      accessorySystemLabels: equipment.accessorySystemLabels.join(", "),
       location: equipment.location ?? "Shop",
       dueDate: formatDueDateValue(equipment.dueDate),
     });
@@ -406,10 +402,6 @@ function EditEquipmentModal({
       category: formData.category,
       variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
-      accessorySystemLabels: formData.accessorySystemLabels
-        .split(",")
-        .map((label) => label.trim())
-        .filter((label, index, labels) => label && labels.indexOf(label) === index),
       location: formData.location || "Shop",
     };
     const dueDateInput = formData.dueDate.trim();
@@ -523,18 +515,6 @@ function EditEquipmentModal({
               </Select>
             </div>
 
-            {isAccessoryWarehouse && (
-              <div className="space-y-2">
-                <Label>Accessory system labels (Optional)</Label>
-                <Input
-                  value={formData.accessorySystemLabels}
-                  onChange={(event) => setFormData((prev) => ({ ...prev, accessorySystemLabels: event.target.value }))}
-                  placeholder="Use warehouse defaults, or enter labels separated by commas"
-                />
-                <p className="text-xs text-muted-foreground">Item labels override the accessory warehouse defaults.</p>
-              </div>
-            )}
-
             <div className="space-y-2">
               <Label>Location</Label>
               <Select
@@ -609,7 +589,6 @@ function ActionModal({
   isOpen, 
   onClose,
   canManageEquipment,
-  isAccessoryWarehouse = false,
   allEquipment,
   locationOptions,
   systemColorOptions,
@@ -623,7 +602,6 @@ function ActionModal({
   isOpen: boolean; 
   onClose: () => void;
   canManageEquipment: boolean;
-  isAccessoryWarehouse?: boolean;
   allEquipment: Equipment[];
   locationOptions: string[];
   systemColorOptions: string[];
@@ -1026,7 +1004,6 @@ function ActionModal({
             onClose={() => setIsEditing(false)}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
-            isAccessoryWarehouse={isAccessoryWarehouse}
             onAddLocation={onAddLocation}
             onIdUpdated={onIdUpdated}
           />
@@ -1202,6 +1179,16 @@ function SystemCheckoutModal({
     .map((slot) => slot.originalItem)
     .filter((item): item is Equipment => !!item);
   const selectedComputer = equipment.find((item) => item.id === selectedComputerId);
+  const selectedSystemToolbox = selectedComputer?.toolboxId
+    ? registry?.toolboxes.find((toolbox) => toolbox.id === selectedComputer.toolboxId)
+    : undefined;
+  const accessorySourceToolboxes = (registry?.toolboxes ?? []).filter(
+    (toolbox) =>
+      toolbox.isAccessoryToolbox &&
+      toolbox.enabled &&
+      toolbox.warehouseId === selectedSystemToolbox?.warehouseId
+  );
+  const accessorySourceToolboxIds = new Set(accessorySourceToolboxes.map((toolbox) => toolbox.id));
   const checkoutLocation = selectedComputer?.location || "Shop";
   const isAvailableAtLocation = (item: Equipment) =>
     item.status === "available" &&
@@ -1225,13 +1212,8 @@ function SystemCheckoutModal({
   ];
   const compatibleAccessories = allEquipment.filter((item) => {
     if (item.status !== "available" || isRepairLocation(item.location) || !isCalibrationCurrent(item.dueDate)) return false;
-    const toolbox = registry?.toolboxes.find((entry) => entry.id === item.toolboxId);
-    const warehouse = registry?.warehouses.find((entry) => entry.id === toolbox?.warehouseId);
-    if (!warehouse?.enabled || !warehouse.isAccessoryWarehouse || !toolbox?.enabled) return false;
-    const labels = item.accessorySystemLabels.length > 0
-      ? item.accessorySystemLabels
-      : warehouse.defaultAccessorySystemLabels;
-    return labels.some((label) => label.trim().toLowerCase() === selectedComputerColor.trim().toLowerCase());
+    const warehouse = registry?.warehouses.find((entry) => entry.id === selectedSystemToolbox?.warehouseId);
+    return !!warehouse?.enabled && !!item.toolboxId && accessorySourceToolboxIds.has(item.toolboxId);
   });
   const toggleAccessory = (id: string) => {
     setSelectedAccessoryIds((current) =>
@@ -1503,12 +1485,12 @@ function SystemCheckoutModal({
               <div>
                 <h3 className="text-lg font-semibold">Need any accessories?</h3>
                 <p className="text-sm text-muted-foreground">
-                  Optional calibrated accessories tagged for {selectedComputerColor}. They remain owned by their accessory warehouse.
+                  Choose available, in-calibration items from {accessorySourceToolboxes.map((toolbox) => toolbox.name).join(", ")} in this warehouse. They stay assigned to that toolbox while checked out with the {selectedComputerColor} system.
                 </p>
               </div>
               {compatibleAccessories.length === 0 ? (
                 <p className="rounded-lg border border-border p-4 text-sm text-muted-foreground">
-                  No available calibrated accessories are tagged for this system.
+                  No available, in-calibration items are in the accessory toolbox.
                 </p>
               ) : (
                 <div className="space-y-2">
@@ -1527,7 +1509,7 @@ function SystemCheckoutModal({
                             <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
                           </span>
                           <span className="mt-1 block text-xs text-muted-foreground">
-                            {item.category}{item.variant ? ` · ${item.variant}` : ""} · {warehouse?.name ?? "Accessory warehouse"} · {item.location || "Shop"}
+                            {item.category}{item.variant ? ` · ${item.variant}` : ""} · {toolbox?.name ?? "Accessory toolbox"} · {warehouse?.name ?? ""} · {item.location || "Shop"}
                           </span>
                           {item.dueDate && (
                             <span className="mt-1 block text-xs text-muted-foreground">Due {formatDueDateValue(item.dueDate)}</span>
@@ -1753,12 +1735,12 @@ function SystemCheckoutModal({
                         onChange={(e) => setValveNumber(e.target.value)}
                     />
                   </div>
-                  <Button 
+                  <Button
                     className="w-full h-12 text-lg font-bold" 
-                    onClick={() => compatibleAccessories.length > 0 ? setStep(4) : handleSubmit()}
+                    onClick={() => accessorySourceToolboxes.length > 0 ? setStep(4) : handleSubmit()}
                     disabled={!workOrder || !techName.trim() || !selectedComputerId || checkoutSystem.isPending}
                   >
-                    {compatibleAccessories.length > 0 ? "Continue to Accessories" : "Check Out System"}
+                    {accessorySourceToolboxes.length > 0 ? "Continue to Accessories" : "Check Out System"}
                   </Button>
                   {unresolvedRequiredSlots.length > 0 && (
                     <p className="text-xs text-amber-600">
@@ -1779,12 +1761,14 @@ function AccessoryCheckoutModal({
   onClose,
   initialWorkOrder,
   initialSystemColor,
+  initialWarehouseId,
   initialTechName,
 }: {
   isOpen: boolean;
   onClose: () => void;
   initialWorkOrder?: string;
   initialSystemColor?: string;
+  initialWarehouseId?: string;
   initialTechName?: string;
 }) {
   const { data: equipment = [] } = useEquipment(undefined, isOpen ? 10_000 : false);
@@ -1802,25 +1786,31 @@ function AccessoryCheckoutModal({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const toolboxById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox]));
   const warehouseById = new Map((registry?.warehouses ?? []).map((warehouse) => [warehouse.id, warehouse]));
-  const getWarehouse = (item: Equipment) => {
-    const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
-    return toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
-  };
+  const accessorySourceToolboxes = (registry?.toolboxes ?? []).filter(
+    (toolbox) => toolbox.isAccessoryToolbox && (!initialWarehouseId || toolbox.warehouseId === initialWarehouseId)
+  );
+  const accessorySourceToolboxIds = new Set(accessorySourceToolboxes.map((toolbox) => toolbox.id));
   const accessories = equipment.filter((item) => {
-    const warehouse = getWarehouse(item);
-    if (!warehouse?.enabled || !warehouse.isAccessoryWarehouse) return false;
-    if (initialSystemColor) {
-      const labels = item.accessorySystemLabels.length > 0
-        ? item.accessorySystemLabels
-        : warehouse.defaultAccessorySystemLabels;
-      if (!labels.some((label) => label.trim().toLowerCase() === initialSystemColor.trim().toLowerCase())) return false;
-    }
-    return true;
+    const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+    if (!toolbox || (initialWarehouseId && toolbox.warehouseId !== initialWarehouseId)) return false;
+    return accessorySourceToolboxIds.has(toolbox.id) ||
+      (item.status === "checked_out" && !!item.accessoryHomeLocation);
   });
   const availableAccessories = accessories.filter(
-    (item) => item.status === "available" && !isRepairLocation(item.location) && isCalibrationCurrent(item.dueDate)
+    (item) => {
+      const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+      const warehouse = toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+      return !!toolbox?.isAccessoryToolbox &&
+        toolbox.enabled &&
+        !!warehouse?.enabled &&
+        item.status === "available" &&
+        !isRepairLocation(item.location) &&
+        isCalibrationCurrent(item.dueDate);
+    }
   );
-  const checkedOutAccessories = accessories.filter((item) => item.status === "checked_out");
+  const checkedOutAccessories = accessories.filter(
+    (item) => item.status === "checked_out" && (!!item.accessoryHomeLocation || accessorySourceToolboxIds.has(item.toolboxId ?? ""))
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1828,7 +1818,7 @@ function AccessoryCheckoutModal({
     setTechName(initialTechName ?? localStorage.getItem("plantpouch-tech-name") ?? "");
     setValveNumber("");
     setSelectedIds([]);
-  }, [initialSystemColor, initialTechName, initialWorkOrder, isOpen]);
+  }, [initialSystemColor, initialTechName, initialWarehouseId, initialWorkOrder, isOpen]);
 
   const handleCheckout = () => {
     if (selectedIds.length === 0 || !workOrder.trim() || !techName.trim()) return;
@@ -1876,7 +1866,7 @@ function AccessoryCheckoutModal({
             <h2 className="text-xl font-bold">Accessories</h2>
             <p className="text-sm text-muted-foreground">
               {initialSystemColor
-                ? `Accessories tagged for ${initialSystemColor}`
+                ? `Add items from ${accessorySourceToolboxes.map((toolbox) => toolbox.name).join(", ") || "the accessory toolbox"} to ${initialSystemColor}`
                 : "Check out accessory equipment independently"}
             </p>
           </div>
@@ -1894,12 +1884,13 @@ function AccessoryCheckoutModal({
             </div>
             {availableAccessories.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                No available calibrated accessories{initialSystemColor ? ` tagged for ${initialSystemColor}` : ""}.
+                No available, in-calibration accessories are in the selected accessory toolbox.
               </p>
             ) : (
               <div className="space-y-2">
                 {availableAccessories.map((item) => {
-                  const warehouse = getWarehouse(item);
+                  const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+                  const warehouse = toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
                   return (
                     <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
                       <Checkbox
@@ -1914,7 +1905,7 @@ function AccessoryCheckoutModal({
                           <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
                         </span>
                         <span className="mt-1 block text-xs text-muted-foreground">
-                          {item.category}{item.variant ? ` · ${item.variant}` : ""} · {warehouse?.name} · {item.location || "Shop"}
+                          {item.category}{item.variant ? ` · ${item.variant}` : ""} · {toolbox?.name} · {warehouse?.name} · {item.location || "Shop"}
                         </span>
                         {item.dueDate && (
                           <span className="mt-1 block text-xs text-muted-foreground">Calibration due {formatDueDateValue(item.dueDate)}</span>
@@ -2022,10 +2013,12 @@ function SystemCheckInModal({
     accessoryReturned?: boolean;
   }>>({});
   const toolboxById = new Map((registry?.toolboxes ?? []).map((toolbox) => [toolbox.id, toolbox]));
-  const warehouseById = new Map((registry?.warehouses ?? []).map((warehouse) => [warehouse.id, warehouse]));
   const isAccessory = (item: Equipment) => {
     const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
-    return toolbox ? warehouseById.get(toolbox.warehouseId)?.isAccessoryWarehouse === true : false;
+    return toolbox?.isAccessoryToolbox === true ||
+      !!item.accessoryHomeLocation ||
+      !!item.accessorySystemColor ||
+      !!item.accessoryNote;
   };
 
   // Derived state
@@ -2297,7 +2290,6 @@ function AddEquipmentModal({
   isOpen, 
   onClose,
   toolboxId,
-  isAccessoryWarehouse = false,
   locationOptions,
   systemColorOptions,
   onAddLocation,
@@ -2305,7 +2297,6 @@ function AddEquipmentModal({
   isOpen: boolean; 
   onClose: () => void;
   toolboxId?: string;
-  isAccessoryWarehouse?: boolean;
   locationOptions: string[];
   systemColorOptions: string[];
   onAddLocation: (value: string) => void;
@@ -2317,7 +2308,6 @@ function AddEquipmentModal({
     category: '',
     variant: '',
     systemColor: '',
-    accessorySystemLabels: '',
     location: 'Shop',
     status: 'available',
     dueDate: ''
@@ -2350,10 +2340,6 @@ function AddEquipmentModal({
       category: formData.category,
       variant: formData.variant.trim() || undefined,
       systemColor: formData.systemColor || undefined,
-      accessorySystemLabels: formData.accessorySystemLabels
-        .split(",")
-        .map((label) => label.trim())
-        .filter((label, index, labels) => label && labels.indexOf(label) === index),
       originalSystemColor: formData.systemColor || undefined,
       location: formData.location || "Shop",
       status: 'available',
@@ -2361,7 +2347,7 @@ function AddEquipmentModal({
     }, {
       onSuccess: () => {
         toast.success(`Equipment ${formData.id} added successfully`);
-        setFormData({ id: '', name: '', category: '', variant: '', systemColor: '', accessorySystemLabels: '', location: 'Shop', status: 'available', dueDate: '' });
+        setFormData({ id: '', name: '', category: '', variant: '', systemColor: '', location: 'Shop', status: 'available', dueDate: '' });
         onClose();
       },
       onError: (error) => {
@@ -2446,18 +2432,6 @@ function AddEquipmentModal({
                   </SelectContent>
               </Select>
             </div>
-
-            {isAccessoryWarehouse && (
-               <div className="space-y-2">
-                 <Label>Accessory system labels (Optional)</Label>
-                 <Input
-                   value={formData.accessorySystemLabels}
-                   onChange={(event) => setFormData((prev) => ({ ...prev, accessorySystemLabels: event.target.value }))}
-                   placeholder="Use warehouse defaults, or enter labels separated by commas"
-                 />
-                 <p className="text-xs text-muted-foreground">Item labels override the accessory warehouse defaults.</p>
-               </div>
-            )}
 
             <div className="space-y-2">
               <Label>Location</Label>
@@ -2795,8 +2769,6 @@ function AdminImportModal({
     const checkedOutByIndex = headerMap.checkedoutby ?? headerMap.checked_out_by ?? headerMap["checked out by"];
     const checkedOutAtIndex = headerMap.checkedoutat ?? headerMap.checked_out_at ?? headerMap["checked out at"];
     const notesIndex = headerMap.notes;
-    const accessorySystemLabelsIndex =
-      headerMap.accessorysystemlabels ?? headerMap.accessory_system_labels ?? headerMap["accessory system labels"];
     const toolboxIndex = headerMap.toolbox ?? headerMap.toolboxslug ?? headerMap.toolbox_slug ?? headerMap["toolbox slug"];
 
     const hasHeader = ["id", "name", "category"].every((key) => key in headerMap);
@@ -2872,9 +2844,6 @@ function AdminImportModal({
         checkedOutBy: readOptional(checkedOutByIndex),
         checkedOutAt,
         notes: readOptional(notesIndex),
-        accessorySystemLabels: accessorySystemLabelsIndex === undefined
-          ? undefined
-          : (values[accessorySystemLabelsIndex] ?? "").split("|").map((label) => label.trim()).filter(Boolean),
         toolboxId: hasHeader && toolboxIndex !== undefined
           ? (toolboxValue ? matchedToolbox?.id : null)
           : toolboxId,
@@ -2957,7 +2926,7 @@ function AdminImportModal({
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>Import creates new equipment and updates matching IDs. A toolbox column routes each row to the matching toolbox slug.</p>
             <p>For a full snapshot, export with All toolboxes selected. Without a toolbox column, rows go to the currently selected toolbox.</p>
-            <p className="font-mono text-xs text-foreground/70">toolbox,id,name,category,variant,systemColor,location,Due Date,accessorySystemLabels (pipe-separated)</p>
+            <p className="font-mono text-xs text-foreground/70">toolbox,id,name,category,variant,systemColor,location,Due Date</p>
           </div>
 
           <div className="space-y-3">
@@ -4463,6 +4432,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const [accessoryCheckoutContext, setAccessoryCheckoutContext] = useState<{
     workOrder?: string;
     systemColor?: string;
+    warehouseId?: string;
     techName?: string;
   }>({});
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -4528,13 +4498,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
   const selectedEquipment = equipment.find(e => e.id === selectedEquipmentId) || null;
   const activeOutageLocations = activeOutage?.locations ?? [];
   const enabledToolboxes = (registry?.toolboxes ?? []).filter((toolbox) => toolbox.enabled);
-  const isAccessoryWarehouseToolbox = (toolboxId?: string | null) => {
-    if (!toolboxId) return false;
-    const toolbox = registry?.toolboxes.find((entry) => entry.id === toolboxId);
-    return registry?.warehouses.some(
-      (warehouse) => warehouse.id === toolbox?.warehouseId && warehouse.isAccessoryWarehouse
-    ) ?? false;
-  };
   
   const stats = {
     total: equipment.length,
@@ -5570,7 +5533,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       "checkedOutBy",
       "checkedOutAt",
       "notes",
-      "accessorySystemLabels",
     ];
     const rows = equipment.map((item) => [
       toolboxSlugById.get(item.toolboxId ?? "") ?? item.toolboxId ?? "",
@@ -5590,7 +5552,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
       item.checkedOutBy ?? "",
       item.checkedOutAt ? format(new Date(item.checkedOutAt), "MM/dd/yyyy") : "",
       item.notes ?? "",
-      item.accessorySystemLabels.join("|"),
     ]);
     const lines = [
       headers.map(csvEscape).join(","),
@@ -6366,6 +6327,8 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
               <div className="space-y-2">
                 {checkedOutGroups.map((group) => {
                   const sample = group.items[0];
+                  const systemComputer = group.items.find((item) => item.category === "Computer");
+                  const systemToolbox = registry?.toolboxes.find((toolbox) => toolbox.id === systemComputer?.toolboxId);
                   const valveSuffix = group.valveNumber ? ` (Valve # ${group.valveNumber})` : "";
                   const label = group.systemColor
                     ? `${group.systemColor} system checked out by ${group.tech} at WO ${group.workOrder}${valveSuffix}`
@@ -6412,6 +6375,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                               setAccessoryCheckoutContext({
                                 workOrder: group.workOrder,
                                 systemColor: group.systemColor ?? undefined,
+                                warehouseId: systemToolbox?.warehouseId,
                                 techName: group.tech,
                               });
                               setIsAccessoryCheckoutOpen(true);
@@ -7016,7 +6980,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             isOpen={isAddModalOpen} 
             onClose={() => setIsAddModalOpen(false)}
             toolboxId={selectedToolboxId}
-            isAccessoryWarehouse={isAccessoryWarehouseToolbox(selectedToolboxId)}
             locationOptions={locationOptions}
             systemColorOptions={systemColorOptions}
             onAddLocation={handleAddLocation}
@@ -7067,6 +7030,7 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
             onClose={() => setIsAccessoryCheckoutOpen(false)}
             initialWorkOrder={accessoryCheckoutContext.workOrder}
             initialSystemColor={accessoryCheckoutContext.systemColor}
+            initialWarehouseId={accessoryCheckoutContext.warehouseId}
             initialTechName={accessoryCheckoutContext.techName}
           />
         )}
@@ -7171,7 +7135,6 @@ export default function Home({ mode = "admin" }: { mode?: "admin" | "tech" | "ou
                 isOpen={!!selectedEquipmentId} 
                 onClose={() => setSelectedEquipmentId(null)}
                 canManageEquipment={canManageEquipment}
-                isAccessoryWarehouse={isAccessoryWarehouseToolbox(selectedEquipment?.toolboxId)}
                 allEquipment={equipment}
                 locationOptions={locationOptions}
                 systemColorOptions={systemColorOptions}
