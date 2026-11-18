@@ -213,6 +213,7 @@ export const fieldsFromPdf = (
   const groupedCheckboxNames = new Set<string>();
   const textLabels = textLabelsByCheckboxRow(checkboxWidgets, textPages, rowAxisByPage);
   rows.forEach((rowWidgets, rowKey) => {
+    const pageIndex = rowWidgets[0].pageIndex;
     const rowAxis = rowAxisByPage.get(rowWidgets[0].pageIndex) ?? "x";
     const slotAxis = rowAxis === "x" ? "y" : "x";
     const slots = new Map<number, CheckboxWidget[]>();
@@ -228,13 +229,25 @@ export const fieldsFromPdf = (
     const orderedSlots = Array.from(slots.values()).sort((left, right) =>
       (left[0][slotAxis] - right[0][slotAxis]),
     );
+    const pageText = new Set(textPages[pageIndex]?.items.map((item) => item.str.trim().toUpperCase()) ?? []);
+    const hasSatUnsatHeaders = pageText.has("SAT") && pageText.has("UNSAT");
+    const displayOption = (option: string) => {
+      if (!hasSatUnsatHeaders) return option;
+      if (option === "Yes") return "SAT";
+      if (option === "No") return "UNSAT";
+      return option;
+    };
     const sortedValues = orderedSlots.map((slotWidgets) => slotWidgets[0].onValue);
     const directOptions = sortedValues.map(checkboxOptionFromValue);
     const optionByWidget = new Map<CheckboxWidget, string>();
     if (new Set(directOptions).size === 2 && directOptions.every(Boolean)) {
-      orderedSlots.forEach((slotWidgets, index) => optionByWidget.set(slotWidgets[0], directOptions[index]!));
+      orderedSlots.forEach((slotWidgets, index) =>
+        optionByWidget.set(slotWidgets[0], displayOption(directOptions[index]!)),
+      );
     } else {
-      orderedSlots.forEach((slotWidgets, index) => optionByWidget.set(slotWidgets[0], index === 0 ? "Yes" : "No"));
+      orderedSlots.forEach((slotWidgets, index) =>
+        optionByWidget.set(slotWidgets[0], displayOption(index === 0 ? "Yes" : "No")),
+      );
     }
 
     const bindingWidgets = orderedSlots.map((slotWidgets) => slotWidgets[0]);
@@ -253,8 +266,8 @@ export const fieldsFromPdf = (
       (distinctNames.size === 1 && new Set(bindingWidgets.map((widget) => widget.onValue)).size !== 2)
     ) return;
 
-    const [pageIndex, rowCenterString] = rowKey.split(":");
-    const pageIndexNumber = Number(pageIndex);
+    const [rowPageIndex, rowCenterString] = rowKey.split(":");
+    const pageIndexNumber = Number(rowPageIndex);
     const rowCenter = Number(rowCenterString);
     const label = textLabels.get(`${pageIndexNumber}:${rowCenter}`) ??
       fieldLabelFromName(bindingWidgets[0].fieldName);
@@ -266,7 +279,7 @@ export const fieldsFromPdf = (
       multiline: false,
       required: true,
       source: "answer",
-      options: ["Yes", "No"],
+      options: hasSatUnsatHeaders ? ["SAT", "UNSAT"] : ["Yes", "No"],
       pdfBindings: bindingWidgets.map((widget) => ({
         option: optionByWidget.get(widget)!,
         fieldName: widget.fieldName,

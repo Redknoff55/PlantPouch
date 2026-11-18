@@ -62,12 +62,14 @@ test("fill detection and filling preserve supported PDF values and signoffs", as
   assert.deepEqual(result.getDropdown("condition").getSelected(), ["Good"]);
 });
 
-test("searchable inspection prompts and revisions map to paired Yes/No PDF checkboxes", async () => {
+test("searchable inspection prompts and revisions map to paired SAT/UNSAT PDF checkboxes", async () => {
   const source = await PDFDocument.create();
   const page = source.addPage();
   const font = await source.embedFont(StandardFonts.Helvetica);
   page.drawText("Question A", { x: 30, y: 300, font });
   page.drawText("Question B", { x: 90, y: 300, font });
+  page.drawText("SAT", { x: 200, y: 400, font });
+  page.drawText("UNSAT", { x: 250, y: 400, font });
   page.drawText("PV-E0910 Ver. 3", { x: 400, y: 20, font });
 
   const form = source.getForm();
@@ -99,10 +101,10 @@ test("searchable inspection prompts and revisions map to paired Yes/No PDF check
   const choices = detected.fields.filter((field) => field.type === "radio");
   assert.equal(detected.revision, "3");
   assert.deepEqual(choices.map((field) => field.label), ["Question A", "Question B"]);
-  assert.ok(choices.every((field) => field.required && field.options.join(",") === "Yes,No"));
+  assert.ok(choices.every((field) => field.required && field.options.join(",") === "SAT,UNSAT"));
   assert.match(validateKioskAnswers(choices, {}) ?? "", /Question A is required/);
 
-  const answers = Object.fromEntries(choices.map((field) => [field.name, "No"]));
+  const answers = Object.fromEntries(choices.map((field) => [field.name, "UNSAT"]));
   const filled = await fillKioskPdf(input, detected.fields, answers, {
     technicianName: "Taylor",
     workOrder: "",
@@ -110,7 +112,7 @@ test("searchable inspection prompts and revisions map to paired Yes/No PDF check
   });
   const filledForm = (await PDFDocument.load(filled)).getForm();
   for (const field of choices) {
-    const selected = field.pdfBindings.find((binding) => binding.option === "No");
+    const selected = field.pdfBindings.find((binding) => binding.option === "UNSAT");
     assert.ok(selected);
     const selectedCheckbox = filledForm.getCheckBox(selected.fieldName);
     assert.equal(selectedCheckbox.acroField.getValue()?.decodeText(), selected.onValue);
