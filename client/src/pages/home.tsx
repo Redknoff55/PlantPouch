@@ -59,6 +59,7 @@ import {
   MapPin,
   PackageCheck,
   ClipboardList,
+  ChevronDown,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,15 @@ const csvEscape = (value: string) => {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
+};
+
+const groupAccessoriesByCategory = (items: Equipment[]) => {
+  const groups = new Map<string, Equipment[]>();
+  for (const item of items) {
+    const category = item.category.trim() || "Other";
+    groups.set(category, [...(groups.get(category) ?? []), item]);
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
 };
 
 const extractValveNumber = (notes?: string | null) => {
@@ -1216,6 +1226,7 @@ function SystemCheckoutModal({
     const warehouse = registry?.warehouses.find((entry) => entry.id === selectedSystemToolbox?.warehouseId);
     return !!warehouse?.enabled && !!item.toolboxId && accessorySourceToolboxIds.has(item.toolboxId);
   });
+  const compatibleAccessoriesByCategory = groupAccessoriesByCategory(compatibleAccessories);
   const toggleAccessory = (id: string) => {
     setSelectedAccessoryIds((current) =>
       current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
@@ -1495,28 +1506,45 @@ function SystemCheckoutModal({
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {compatibleAccessories.map((item) => {
-                    const toolbox = registry?.toolboxes.find((entry) => entry.id === item.toolboxId);
-                    const warehouse = registry?.warehouses.find((entry) => entry.id === toolbox?.warehouseId);
+                  {compatibleAccessoriesByCategory.map(([category, items]) => {
+                    const selectedCount = items.filter((item) => selectedAccessoryIds.includes(item.id)).length;
                     return (
-                      <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
-                        <Checkbox
-                          checked={selectedAccessoryIds.includes(item.id)}
-                          onCheckedChange={() => toggleAccessory(item.id)}
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="flex flex-wrap items-center gap-2 font-medium">
-                            {item.name}
-                            <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                      <details key={category} className="group rounded-lg border border-border/70 bg-muted/10">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-3 hover:bg-muted/30 [&::-webkit-details-marker]:hidden">
+                          <span className="font-semibold">{category}</span>
+                          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {selectedCount > 0 && <Badge variant="secondary">{selectedCount} selected</Badge>}
+                            <Badge variant="outline">{items.length}</Badge>
+                            <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                           </span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            {item.category}{item.variant ? ` · ${item.variant}` : ""} · {toolbox?.name ?? "Accessory toolbox"} · {warehouse?.name ?? ""} · {item.location || "Shop"}
-                          </span>
-                          {item.dueDate && (
-                            <span className="mt-1 block text-xs text-muted-foreground">Due {formatDueDateValue(item.dueDate)}</span>
-                          )}
-                        </span>
-                      </label>
+                        </summary>
+                        <div className="space-y-2 border-t border-border/60 p-3">
+                          {items.map((item) => {
+                            const toolbox = registry?.toolboxes.find((entry) => entry.id === item.toolboxId);
+                            const warehouse = registry?.warehouses.find((entry) => entry.id === toolbox?.warehouseId);
+                            return (
+                              <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
+                                <Checkbox
+                                  checked={selectedAccessoryIds.includes(item.id)}
+                                  onCheckedChange={() => toggleAccessory(item.id)}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex flex-wrap items-center gap-2 font-medium">
+                                    {item.name}
+                                    <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                                  </span>
+                                  <span className="mt-1 block text-xs text-muted-foreground">
+                                    {item.variant ? `${item.variant} · ` : ""}{toolbox?.name ?? "Accessory toolbox"} · {warehouse?.name ?? ""} · {item.location || "Shop"}
+                                  </span>
+                                  {item.dueDate && (
+                                    <span className="mt-1 block text-xs text-muted-foreground">Due {formatDueDateValue(item.dueDate)}</span>
+                                  )}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </details>
                     );
                   })}
                 </div>
@@ -1818,6 +1846,7 @@ function AccessoryCheckoutModal({
         isCalibrationCurrent(item.dueDate);
     }
   );
+  const availableAccessoriesByCategory = groupAccessoriesByCategory(availableAccessories);
   const checkedOutAccessories = accessories.filter(
     (item) => item.status === "checked_out" && (!!item.accessoryHomeLocation || accessorySourceToolboxIds.has(item.toolboxId ?? ""))
   );
@@ -1901,30 +1930,47 @@ function AccessoryCheckoutModal({
               </p>
             ) : (
               <div className="space-y-2">
-                {availableAccessories.map((item) => {
-                  const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
-                  const warehouse = toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+                {availableAccessoriesByCategory.map(([category, items]) => {
+                  const selectedCount = items.filter((item) => selectedIds.includes(item.id)).length;
                   return (
-                    <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
-                      <Checkbox
-                        checked={selectedIds.includes(item.id)}
-                        onCheckedChange={() => setSelectedIds((ids) =>
-                          ids.includes(item.id) ? ids.filter((id) => id !== item.id) : [...ids, item.id]
-                        )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex flex-wrap items-center gap-2 font-medium">
-                          {item.name}
-                          <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                    <details key={category} className="group rounded-lg border border-border/70 bg-muted/10">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-lg px-4 py-3 hover:bg-muted/30 [&::-webkit-details-marker]:hidden">
+                        <span className="font-semibold">{category}</span>
+                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                          {selectedCount > 0 && <Badge variant="secondary">{selectedCount} selected</Badge>}
+                          <Badge variant="outline">{items.length}</Badge>
+                          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                         </span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {item.category}{item.variant ? ` · ${item.variant}` : ""} · {toolbox?.name} · {warehouse?.name} · {item.location || "Shop"}
-                        </span>
-                        {item.dueDate && (
-                          <span className="mt-1 block text-xs text-muted-foreground">Calibration due {formatDueDateValue(item.dueDate)}</span>
-                        )}
-                      </span>
-                    </label>
+                      </summary>
+                      <div className="space-y-2 border-t border-border/60 p-3">
+                        {items.map((item) => {
+                          const toolbox = item.toolboxId ? toolboxById.get(item.toolboxId) : undefined;
+                          const warehouse = toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+                          return (
+                            <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 hover:bg-muted/30">
+                              <Checkbox
+                                checked={selectedIds.includes(item.id)}
+                                onCheckedChange={() => setSelectedIds((ids) =>
+                                  ids.includes(item.id) ? ids.filter((id) => id !== item.id) : [...ids, item.id]
+                                )}
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="flex flex-wrap items-center gap-2 font-medium">
+                                  {item.name}
+                                  <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                                </span>
+                                <span className="mt-1 block text-xs text-muted-foreground">
+                                  {item.variant ? `${item.variant} · ` : ""}{toolbox?.name} · {warehouse?.name} · {item.location || "Shop"}
+                                </span>
+                                {item.dueDate && (
+                                  <span className="mt-1 block text-xs text-muted-foreground">Calibration due {formatDueDateValue(item.dueDate)}</span>
+                                )}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </details>
                   );
                 })}
               </div>
