@@ -149,4 +149,6 @@ The `rigging-kiosk` branch publishes `ghcr.io/redknoff55/plantpouch:rigging-kios
 
 PDF templates and completed copies are stored under `/app/data/kiosk`; preserve that volume along with the PostgreSQL database when backing up or moving the deployment. Uploads are limited to 8 MB and must contain supported fillable PDF fields.
 
+For searchable PDFs, the form importer captures a `Rev.` or `Ver.` value and pairs checklist text with Yes/No checkbox fields when their positions and PDF field states are recognizable. Review the detected prompts before publishing; scanned PDFs without a text layer are not automatically read.
+
 The compose files default `KIOSK_COOKIE_SECURE` to `false` for local HTTP testing. Set it to `true` when the kiosk is served over HTTPS. Do not expose the initial administrator setup to an untrusted network.

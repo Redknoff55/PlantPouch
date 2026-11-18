@@ -26,7 +26,7 @@ import {
   toolboxes,
 } from "@shared/schema";
 import { db } from "./db";
-import { fieldsFromPdf, fillKioskPdf, nextScheduledDueDate, validateKioskAnswers } from "./kiosk-utils";
+import { fillKioskPdf, inspectKioskPdf, nextScheduledDueDate, validateKioskAnswers } from "./kiosk-utils";
 
 const scrypt = promisify(nodeScrypt);
 const SESSION_COOKIE = "plantpouch_kiosk_session";
@@ -620,7 +620,7 @@ export function registerKioskRoutes(app: Express) {
         } catch {
           return res.status(400).json({ error: "The file could not be read as a PDF" });
         }
-        const fields = fieldsFromPdf(pdf);
+        const { fields, revision } = await inspectKioskPdf(pdf, req.body);
         if (!fields.length) return res.status(400).json({ error: "This PDF has no supported fillable fields" });
         const [latest] = await db.select({ version: kioskTemplates.version }).from(kioskTemplates).where(and(
           eq(kioskTemplates.warehouseId, warehouse.id),
@@ -637,6 +637,7 @@ export function registerKioskRoutes(app: Express) {
             name,
             version: (latest?.version ?? 0) + 1,
             phase: "pre_checkout",
+            revision,
             fields,
             pdfPath: filePath!,
             active: false,
@@ -696,7 +697,8 @@ export function registerKioskRoutes(app: Express) {
         if (
           detected.type !== field.type ||
           detected.multiline !== field.multiline ||
-          JSON.stringify(detected.options) !== JSON.stringify(field.options)
+          JSON.stringify(detected.options) !== JSON.stringify(field.options) ||
+          JSON.stringify(detected.pdfBindings ?? []) !== JSON.stringify(field.pdfBindings ?? [])
         ) {
           throw new Error("Form field type and options cannot be changed");
         }

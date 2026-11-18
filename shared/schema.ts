@@ -24,6 +24,11 @@ export const kioskFormFieldSchema = z.object({
   required: z.boolean().default(false),
   source: z.enum(["answer", "technician_name", "work_order", "submitted_at", "supervisor_name"]).default("answer"),
   options: z.array(z.string()).default([]),
+  pdfBindings: z.array(z.object({
+    option: z.string().min(1),
+    fieldName: z.string().min(1),
+    onValue: z.string().min(1),
+  })).default([]),
 });
 
 export const kioskFormPhaseSchema = z.enum(["pre_checkout", "scheduled"]);
@@ -192,6 +197,7 @@ export const kioskTemplates = pgTable("kiosk_templates", {
   name: text("name").notNull(),
   version: integer("version").notNull(),
   phase: text("phase").notNull(),
+  revision: text("revision"),
   category: text("category"),
   equipmentIds: jsonb("equipment_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   fields: jsonb("fields").$type<Array<z.infer<typeof kioskFormFieldSchema>>>().notNull().default(sql`'[]'::jsonb`),

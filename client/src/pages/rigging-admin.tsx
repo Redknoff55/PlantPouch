@@ -254,7 +254,9 @@ function FormsPanel({
       setSpecificItems([]);
       setAllowBatch(false);
       setRequiresSupervisor(false);
-      toast.success(`Detected ${created.fields.length} fillable fields in version ${created.version}.`);
+      toast.success(
+        `Detected ${created.fields.length} fields${created.revision ? ` (Rev. ${created.revision})` : ""} in version ${created.version}.`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to upload form.");
     } finally {
@@ -303,7 +305,7 @@ function FormsPanel({
   return (
     <div className="grid gap-5 lg:grid-cols-[0.85fr_1.15fr]">
       <Card>
-        <CardHeader><CardTitle>Upload a form version</CardTitle><CardDescription>Upload a fillable PDF. The kiosk detects its PDF fields and keeps every published version.</CardDescription></CardHeader>
+        <CardHeader><CardTitle>Upload a form version</CardTitle><CardDescription>Upload a searchable, fillable PDF. The kiosk detects its revision, inspection questions, and answer fields, then keeps every published version.</CardDescription></CardHeader>
         <CardContent className="space-y-5">
           {dueItems.length > 0 && (
             <div className="rounded-lg border border-amber-400/60 bg-amber-50 p-3">
@@ -323,7 +325,7 @@ function FormsPanel({
           </form>
           {draft && (
             <div className="rounded-lg border border-primary/40 bg-primary/5 p-3 text-sm">
-              <strong>Draft v{draft.version} ready.</strong> Finish its assignment and field settings to publish it. Uploading the same name creates a new version.
+              <strong>Draft v{draft.version}{draft.revision ? ` · Rev. ${draft.revision}` : ""} ready.</strong> Finish its assignment and field settings to publish it. Uploading the same name creates a new version.
             </div>
           )}
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -333,7 +335,7 @@ function FormsPanel({
             {templates.length === 0 ? <p className="text-xs text-muted-foreground">No forms uploaded.</p> : templates.map((template) => (
               <div key={template.id} className="rounded-md border p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{template.name} · v{template.version}</span>
+                  <span className="font-medium">{template.name} · v{template.version}{template.revision ? ` · Rev. ${template.revision}` : ""}</span>
                   <span className={`rounded-full px-2 py-0.5 text-xs ${template.active ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>{template.active ? "Published" : "Draft / archived"}</span>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">{template.phase.replace("_", " ")} · {template.category ?? `${template.equipmentIds.length} specific item(s)`}</div>
@@ -345,7 +347,7 @@ function FormsPanel({
 
       {draft && (
         <Card>
-          <CardHeader><CardTitle>Configure version {draft.version}</CardTitle><CardDescription>Map detected PDF field names to readable prompts, select required answers, and set the form assignment.</CardDescription></CardHeader>
+          <CardHeader><CardTitle>Configure version {draft.version}{draft.revision ? ` · Rev. ${draft.revision}` : ""}</CardTitle><CardDescription>Review the detected prompts and PDF field mappings, then set the form assignment.</CardDescription></CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2">
               <FormField label="Inspection stage">
