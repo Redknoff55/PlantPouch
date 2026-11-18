@@ -6,13 +6,13 @@ This guide covers two deployment options: GitHub Container Registry (automatic) 
 
 ## Option 1: GitHub Container Registry (Automatic)
 
-The included GitHub Actions workflow automatically builds and pushes images when you push to `main`, push to `testing`, or create a release.
+The included GitHub Actions workflow automatically builds and pushes images when you push to `main`, `testing`, `warehouse`, `accessory-inventory`, or `rigging-kiosk`, or create a release.
 
 ### Setup
 
 1. **Push this repo to GitHub**
 2. **Enable GitHub Packages** (usually enabled by default)
-3. **Push to `main` or `testing`** - the matching image tag will build automatically
+3. **Push to a supported branch** - the matching image tag will build automatically
 
 ### Deployment
 
@@ -125,6 +125,7 @@ docker compose -f docker-compose.deploy.yml up -d
 When using GitHub Actions, images are tagged automatically:
 - `latest` - always points to the latest `main` branch build
 - `testing` - points to the latest `testing` branch build
+- `rigging-kiosk` - points to the latest Rigging kiosk branch build
 - `v1.0.0` - when you create a release tag
 - `main` - branch name tag
 
@@ -134,3 +135,18 @@ image: ghcr.io/redknoff55/plantpouch:v1.0.0
 ```
 
 For a test stack that tracks the `testing` branch image, use [docker-compose.testing.yml](/home/rednoff55/code/PlantPouch/docker-compose.testing.yml).
+
+---
+
+## Inspection Kiosk (Rigging)
+
+The `rigging-kiosk` branch publishes `ghcr.io/redknoff55/plantpouch:rigging-kiosk`. The kiosk runs against the same app and database as PlantPouch, scoped to a warehouse. To isolate testing, deploy it with its own database and persistent data volume.
+
+1. Deploy the `rigging-kiosk` image with a persistent `/app/data` volume.
+2. In PlantPouch, open **Admin → Platform Registry → Inspection kiosks** and enable the desired warehouse.
+3. Open `/kiosk/<warehouse-slug>` from a trusted network and complete the one-time first-administrator setup.
+4. From the kiosk admin page, enroll technicians and supervisors, upload fillable PDFs, map the detected fields, and publish pre-check or scheduled form versions.
+
+PDF templates and completed copies are stored under `/app/data/kiosk`; preserve that volume along with the PostgreSQL database when backing up or moving the deployment. Uploads are limited to 8 MB and must contain supported fillable PDF fields.
+
+The compose files default `KIOSK_COOKIE_SECURE` to `false` for local HTTP testing. Set it to `true` when the kiosk is served over HTTPS. Do not expose the initial administrator setup to an untrusted network.

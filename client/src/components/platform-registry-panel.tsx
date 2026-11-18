@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { InsertPouch, InsertToolbox, Toolbox } from "@shared/schema";
+import type { InsertPouch, InsertToolbox, Toolbox, Warehouse } from "@shared/schema";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,7 @@ export default function PlatformRegistryPanel() {
   const [moduleType, setModuleType] = useState("custom");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savingToolboxId, setSavingToolboxId] = useState<string | null>(null);
+  const [savingWarehouseId, setSavingWarehouseId] = useState<string | null>(null);
 
   const warehouses = data?.warehouses ?? [];
   const toolboxes = data?.toolboxes ?? [];
@@ -48,6 +49,7 @@ export default function PlatformRegistryPanel() {
         description: null,
         enabled: true,
         isAccessoryWarehouse: false,
+        isKioskWarehouse: false,
         defaultAccessorySystemLabels: [],
       });
       setWarehouseName("");
@@ -158,6 +160,19 @@ export default function PlatformRegistryPanel() {
     }
   };
 
+  const saveKioskWarehouse = async (warehouse: Warehouse, enabled: boolean) => {
+    setSavingWarehouseId(warehouse.id);
+    try {
+      await api.registry.updateWarehouse(warehouse.id, { isKioskWarehouse: enabled });
+      await refresh();
+      toast.success(`${warehouse.name} kiosk setting saved.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save kiosk setting.");
+    } finally {
+      setSavingWarehouseId(null);
+    }
+  };
+
   return (
     <Card className="mb-6 border-primary/20">
       <CardHeader>
@@ -234,10 +249,78 @@ export default function PlatformRegistryPanel() {
                 ))
               )}
             </section>
+            <section className="space-y-3 rounded-lg border border-border/60 p-3">
+              <div>
+                <h3 className="text-sm font-semibold">Inspection kiosks</h3>
+                <p className="text-xs text-muted-foreground">
+                  Enable a warehouse-scoped inspection and checkout kiosk for Rigging or another equipment module.
+                </p>
+              </div>
+              {warehouses.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Create a warehouse first.</p>
+              ) : (
+                warehouses.map((warehouse) => (
+                  <KioskWarehouseConfig
+                    key={warehouse.id}
+                    warehouse={warehouse}
+                    isSaving={savingWarehouseId === warehouse.id}
+                    onSave={saveKioskWarehouse}
+                  />
+                ))
+              )}
+            </section>
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function KioskWarehouseConfig({
+  warehouse,
+  isSaving,
+  onSave,
+}: {
+  warehouse: Warehouse;
+  isSaving: boolean;
+  onSave: (warehouse: Warehouse, enabled: boolean) => Promise<void>;
+}) {
+  const [enabled, setEnabled] = useState(warehouse.isKioskWarehouse);
+
+  useEffect(() => {
+    setEnabled(warehouse.isKioskWarehouse);
+  }, [warehouse]);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 p-3">
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          aria-label={`Enable inspection kiosk for ${warehouse.name}`}
+        />
+        <div>
+          <div className="text-sm font-medium">{warehouse.name}</div>
+          <div className="text-xs text-muted-foreground">
+            {enabled ? `Kiosk route: /kiosk/${warehouse.slug}` : "Kiosk disabled"}
+          </div>
+          {enabled && (
+            <div className="mt-1 flex gap-3 text-xs">
+              <a className="text-primary underline" href={`/kiosk/${warehouse.slug}`}>Open kiosk</a>
+              <a className="text-primary underline" href={`/kiosk/${warehouse.slug}/admin`}>Kiosk admin</a>
+            </div>
+          )}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={isSaving}
+        onClick={() => onSave(warehouse, enabled)}
+      >
+        {isSaving ? "Saving..." : "Save"}
+      </Button>
+    </div>
   );
 }
 

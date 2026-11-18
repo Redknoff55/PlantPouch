@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, jsonb, boolean, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -15,6 +15,18 @@ export const stagedSystemMissingItemSchema = z.object({
   variant: z.string().min(1).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
+
+export const kioskFormFieldSchema = z.object({
+  name: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(["text", "checkbox", "radio", "dropdown", "option-list"]),
+  multiline: z.boolean().default(false),
+  required: z.boolean().default(false),
+  source: z.enum(["answer", "technician_name", "work_order", "submitted_at", "supervisor_name"]).default("answer"),
+  options: z.array(z.string()).default([]),
+});
+
+export const kioskFormPhaseSchema = z.enum(["pre_checkout", "scheduled"]);
 
 export const equipment = pgTable("equipment", {
   id: varchar("id").primaryKey(),
@@ -56,6 +68,7 @@ export const warehouses = pgTable("warehouses", {
   slug: text("slug").notNull().unique(),
   description: text("description"),
   enabled: boolean("enabled").notNull().default(true),
+  isKioskWarehouse: boolean("is_kiosk_warehouse").notNull().default(false),
   isAccessoryWarehouse: boolean("is_accessory_warehouse").notNull().default(false),
   defaultAccessorySystemLabels: jsonb("default_accessory_system_labels")
     .$type<string[]>()
@@ -151,6 +164,101 @@ export const equipmentHistory = pgTable("equipment_history", {
   workOrder: text("work_order"),
 });
 
+export const kioskUsers = pgTable("kiosk_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  badgeTokenHash: text("badge_token_hash").notNull().unique(),
+  pinHash: text("pin_hash").notNull(),
+  role: text("role").notNull().default("technician"),
+  active: boolean("active").notNull().default(true),
+  failedLoginCount: integer("failed_login_count").notNull().default(0),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const kioskSessions = pgTable("kiosk_sessions", {
+  tokenHash: varchar("token_hash").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => kioskUsers.id, { onDelete: "cascade" }),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const kioskTemplates = pgTable("kiosk_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  version: integer("version").notNull(),
+  phase: text("phase").notNull(),
+  category: text("category"),
+  equipmentIds: jsonb("equipment_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  fields: jsonb("fields").$type<Array<z.infer<typeof kioskFormFieldSchema>>>().notNull().default(sql`'[]'::jsonb`),
+  allowBatch: boolean("allow_batch").notNull().default(false),
+  scheduleInterval: integer("schedule_interval"),
+  scheduleUnit: text("schedule_unit"),
+  firstDueAt: timestamp("first_due_at"),
+  requiresSupervisorApproval: boolean("requires_supervisor_approval").notNull().default(false),
+  pdfPath: text("pdf_path").notNull(),
+  active: boolean("active").notNull().default(false),
+  createdBy: varchar("created_by").references(() => kioskUsers.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  warehouseNameVersion: uniqueIndex("kiosk_templates_warehouse_name_version").on(table.warehouseId, table.name, table.version),
+}));
+
+export const kioskSubmissions = pgTable("kiosk_submissions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  templateId: varchar("template_id").notNull().references(() => kioskTemplates.id, { onDelete: "restrict" }),
+  equipmentIds: jsonb("equipment_ids").$type<string[]>().notNull(),
+  phase: text("phase").notNull(),
+  workOrder: text("work_order"),
+  technicianId: varchar("technician_id").notNull().references(() => kioskUsers.id, { onDelete: "restrict" }),
+  supervisorId: varchar("supervisor_id").references(() => kioskUsers.id, { onDelete: "set null" }),
+  answers: jsonb("answers").$type<Record<string, string | boolean>>().notNull(),
+  result: text("result").notNull(),
+  status: text("status").notNull(),
+  pdfPath: text("pdf_path").notNull(),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  approvedAt: timestamp("approved_at"),
+});
+
+export const kioskEquipmentState = pgTable("kiosk_equipment_state", {
+  equipmentId: varchar("equipment_id").primaryKey().references(() => equipment.id, { onDelete: "cascade" }),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  nextDueAt: timestamp("next_due_at"),
+  lastPassedAt: timestamp("last_passed_at"),
+  outOfService: boolean("out_of_service").notNull().default(false),
+  holdReason: text("hold_reason"),
+  holdPhase: text("hold_phase"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const kioskCheckouts = pgTable("kiosk_checkouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  equipmentIds: jsonb("equipment_ids").$type<string[]>().notNull(),
+  workOrder: text("work_order").notNull(),
+  technicianId: varchar("technician_id").notNull().references(() => kioskUsers.id, { onDelete: "restrict" }),
+  checkoutSubmissionId: varchar("checkout_submission_id").notNull().references(() => kioskSubmissions.id, { onDelete: "restrict" }),
+  checkedOutAt: timestamp("checked_out_at").defaultNow().notNull(),
+  returnedAt: timestamp("returned_at"),
+  checkedInBy: varchar("checked_in_by").references(() => kioskUsers.id, { onDelete: "set null" }),
+  checkInNotes: text("check_in_notes"),
+});
+
+export const kioskAuditEvents = pgTable("kiosk_audit_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  warehouseId: varchar("warehouse_id").notNull().references(() => warehouses.id, { onDelete: "cascade" }),
+  actorId: varchar("actor_id").references(() => kioskUsers.id, { onDelete: "set null" }),
+  action: text("action").notNull(),
+  equipmentIds: jsonb("equipment_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  details: jsonb("details").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertEquipmentSchema = createInsertSchema(equipment).omit({
   createdAt: true,
   updatedAt: true,
@@ -177,6 +285,7 @@ export const insertWarehouseSchema = createInsertSchema(warehouses).omit({
   name: z.string().trim().min(1),
   slug: z.string().trim().min(1).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   enabled: z.boolean().default(true),
+  isKioskWarehouse: z.boolean().default(false),
   defaultAccessorySystemLabels: z.array(z.string().trim().min(1)).default([]),
 });
 
@@ -252,6 +361,10 @@ export type System = typeof systems.$inferSelect;
 export type InsertSystem = z.infer<typeof insertSystemSchema>;
 export type Warehouse = typeof warehouses.$inferSelect;
 export type InsertWarehouse = z.infer<typeof insertWarehouseSchema>;
+export type KioskUser = typeof kioskUsers.$inferSelect;
+export type KioskTemplate = typeof kioskTemplates.$inferSelect;
+export type KioskSubmission = typeof kioskSubmissions.$inferSelect;
+export type KioskTemplateField = z.infer<typeof kioskFormFieldSchema>;
 export type Toolbox = typeof toolboxes.$inferSelect;
 export type InsertToolbox = z.infer<typeof insertToolboxSchema>;
 export type Pouch = typeof pouches.$inferSelect;

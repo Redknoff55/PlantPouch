@@ -19,6 +19,7 @@ import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
+import { registerKioskRoutes } from "./kiosk-routes";
 
 const parseDueDateString = (value: string) => {
   const trimmed = value.trim();
@@ -73,6 +74,7 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  registerKioskRoutes(app);
   const getAccessoryInventoryContext = async () => {
     const [warehouses, toolboxes] = await Promise.all([
       storage.getAllWarehouses(),
@@ -85,6 +87,10 @@ export async function registerRoutes(
     const getWarehouse = (item: Equipment) => {
       const toolbox = getToolbox(item);
       return toolbox ? warehouseById.get(toolbox.warehouseId) : undefined;
+    };
+    const getToolboxWarehouseId = (toolboxId?: string | null) => {
+      const toolbox = toolboxId ? toolboxById.get(toolboxId) : undefined;
+      return toolbox?.warehouseId;
     };
     const isAccessory = (item: Equipment) =>
       getToolbox(item)?.isAccessoryToolbox === true ||
@@ -100,7 +106,19 @@ export async function registerRoutes(
         (!warehouseId || toolbox.warehouseId === warehouseId) &&
         (!toolboxId || toolbox.id === toolboxId);
     };
-    return { isAccessory, isEnabledAccessory, getToolbox };
+    const isKioskWarehouseEquipment = (item: Equipment) => getWarehouse(item)?.isKioskWarehouse === true;
+    const isKioskToolbox = (toolboxId?: string | null) => {
+      const warehouseId = getToolboxWarehouseId(toolboxId);
+      return warehouseId ? warehouseById.get(warehouseId)?.isKioskWarehouse === true : false;
+    };
+    return {
+      isAccessory,
+      isEnabledAccessory,
+      isKioskWarehouseEquipment,
+      isKioskToolbox,
+      getToolbox,
+      getToolboxWarehouseId,
+    };
   };
   const isCalibrationCurrent = (item: Equipment) => {
     if (!item.dueDate) return true;
@@ -111,6 +129,106 @@ export async function registerRoutes(
     const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     return dueDay > todayStart;
   };
+
+  app.use("/api/equipment", async (req, res, next) => {
+    try {
+      const body = req.body && typeof req.body === "object"
+        ? req.body as Record<string, unknown>
+        : {};
+      const pathMatch = req.path.match(/^\/([^/]+)\/(checkout|checkin|accessory-return|accessory-reassign)$/);
+      const directId = pathMatch ? decodeURIComponent(pathMatch[1]) : undefined;
+      const singleIdMatch = req.path.match(/^\/([^/]+)$/);
+      const singleId = singleIdMatch ? decodeURIComponent(singleIdMatch[1]) : undefined;
+      const operation = pathMatch?.[2];
+      const isEquipmentCheckoutOrReturn = req.method === "POST" && !!operation;
+      const isStatusPatch = req.method === "PATCH" && !!singleId && body.status !== undefined;
+      const isAssignmentPatch = req.method === "PATCH" && !!singleId && body.toolboxId !== undefined;
+      const isRemoval = req.method === "DELETE" && !!singleId;
+      const isBatchMutation = req.method === "POST" && [
+        "/checkout/accessories",
+        "/checkout/system",
+        "/checkin/workorder",
+        "/swap",
+        "/swap/resolve",
+        "/",
+        "/import",
+      ].includes(req.path);
+
+      if (!isEquipmentCheckoutOrReturn && !isStatusPatch && !isAssignmentPatch && !isRemoval && !isBatchMutation) {
+        return next();
+      }
+
+      const accessoryContext = await getAccessoryInventoryContext();
+      const ids = new Set<string>();
+      const addIds = (value: unknown) => {
+        if (Array.isArray(value)) value.forEach((id) => {
+          if (typeof id === "string") ids.add(id);
+        });
+        else if (typeof value === "string") ids.add(value);
+      };
+      if (isEquipmentCheckoutOrReturn || isStatusPatch || isRemoval) {
+        if (directId || singleId) ids.add(directId ?? singleId!);
+      }
+      if (req.method === "POST" && ["/checkout/accessories", "/checkout/system"].includes(req.path)) {
+        addIds(body.equipmentIds);
+        addIds(body.accessoryIds);
+      }
+      if (req.method === "POST" && req.path === "/checkin/workorder" && typeof body.workOrder === "string") {
+        (await storage.getEquipmentByWorkOrder(body.workOrder)).forEach((item) => ids.add(item.id));
+      }
+      if (req.method === "POST" && req.path === "/swap") {
+        addIds([body.brokenId, body.replacementId]);
+      }
+      if (req.method === "POST" && req.path === "/swap/resolve") addIds(body.borrowedId);
+
+      const items = await Promise.all(Array.from(ids, (id) => storage.getEquipment(id)));
+      if (items.some((item) => item && accessoryContext.isKioskWarehouseEquipment(item))) {
+        return res.status(409).json({ error: "Rigging equipment must be checked in or out through its inspection kiosk." });
+      }
+
+      if (isAssignmentPatch && singleId) {
+        const existing = await storage.getEquipment(singleId);
+        const targetToolboxId = typeof body.toolboxId === "string" ? body.toolboxId : null;
+        const currentWarehouseId = existing
+          ? accessoryContext.getToolboxWarehouseId(existing.toolboxId)
+          : undefined;
+        const targetWarehouseId = accessoryContext.getToolboxWarehouseId(targetToolboxId);
+        const currentIsKiosk = !!existing && accessoryContext.isKioskWarehouseEquipment(existing);
+        const targetIsKiosk = accessoryContext.isKioskToolbox(targetToolboxId);
+        if (
+          (currentIsKiosk && !targetIsKiosk) ||
+          (existing?.status === "checked_out" && targetIsKiosk && currentWarehouseId !== targetWarehouseId)
+        ) {
+          return res.status(409).json({ error: "Rigging equipment cannot be moved out of its kiosk warehouse or moved between warehouses while checked out." });
+        }
+      }
+
+      if (req.method === "POST" && (req.path === "/" || req.path === "/import")) {
+        const importedId = typeof body.id === "string" ? body.id : undefined;
+        const existing = importedId ? await storage.getEquipment(importedId) : undefined;
+        const requestedToolboxId = typeof body.toolboxId === "string" ? body.toolboxId : existing?.toolboxId;
+        const targetIsKiosk = accessoryContext.isKioskToolbox(requestedToolboxId);
+        const currentWarehouseId = existing
+          ? accessoryContext.getToolboxWarehouseId(existing.toolboxId)
+          : undefined;
+        const targetWarehouseId = accessoryContext.getToolboxWarehouseId(requestedToolboxId);
+        const existingIsKiosk = !!existing && accessoryContext.isKioskWarehouseEquipment(existing);
+        if ((existingIsKiosk && body.status !== undefined) || (targetIsKiosk && body.status === "checked_out")) {
+          return res.status(409).json({ error: "Rigging equipment status must be managed through its inspection kiosk." });
+        }
+        if (
+          (existingIsKiosk && body.toolboxId !== undefined && !targetIsKiosk) ||
+          (existing?.status === "checked_out" && targetIsKiosk && currentWarehouseId !== targetWarehouseId)
+        ) {
+          return res.status(409).json({ error: "Rigging equipment cannot be moved out of its kiosk warehouse or moved between warehouses while checked out." });
+        }
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.get("/api/registry", async (_req, res) => {
     try {
