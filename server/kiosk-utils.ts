@@ -28,6 +28,21 @@ type CheckboxWidget = {
   onValue: string;
 };
 
+export const pdfBindingsMatch = (
+  left: KioskTemplateField["pdfBindings"] | undefined,
+  right: KioskTemplateField["pdfBindings"] | undefined,
+) => {
+  const leftBindings = left ?? [];
+  const rightBindings = right ?? [];
+  return leftBindings.length === rightBindings.length && leftBindings.every((binding, index) => {
+    const candidate = rightBindings[index];
+    return candidate !== undefined &&
+      binding.option === candidate.option &&
+      binding.fieldName === candidate.fieldName &&
+      binding.onValue === candidate.onValue;
+  });
+};
+
 const isPdfTextItem = (item: unknown): item is PdfTextItem =>
   typeof item === "object" &&
   item !== null &&

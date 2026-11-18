@@ -26,7 +26,7 @@ import {
   toolboxes,
 } from "@shared/schema";
 import { db } from "./db";
-import { fillKioskPdf, inspectKioskPdf, nextScheduledDueDate, validateKioskAnswers } from "./kiosk-utils";
+import { fillKioskPdf, inspectKioskPdf, nextScheduledDueDate, pdfBindingsMatch, validateKioskAnswers } from "./kiosk-utils";
 
 const scrypt = promisify(nodeScrypt);
 const SESSION_COOKIE = "plantpouch_kiosk_session";
@@ -698,7 +698,7 @@ export function registerKioskRoutes(app: Express) {
           detected.type !== field.type ||
           detected.multiline !== field.multiline ||
           JSON.stringify(detected.options) !== JSON.stringify(field.options) ||
-          JSON.stringify(detected.pdfBindings ?? []) !== JSON.stringify(field.pdfBindings ?? [])
+          !pdfBindingsMatch(detected.pdfBindings, field.pdfBindings)
         ) {
           throw new Error("Form field type and options cannot be changed");
         }

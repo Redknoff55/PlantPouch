@@ -2,7 +2,24 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PDFDict, PDFDocument, PDFName, StandardFonts } from "pdf-lib";
 import type { KioskTemplateField } from "@shared/schema";
-import { fieldsFromPdf, fillKioskPdf, inspectKioskPdf, nextScheduledDueDate, validateKioskAnswers } from "./kiosk-utils";
+import { fieldsFromPdf, fillKioskPdf, inspectKioskPdf, nextScheduledDueDate, pdfBindingsMatch, validateKioskAnswers } from "./kiosk-utils";
+
+test("PDF checkbox bindings compare by value regardless of JSON key order", () => {
+  assert.equal(
+    pdfBindingsMatch(
+      [{ option: "Yes", onValue: "Yes", fieldName: "check.yes" }],
+      [{ fieldName: "check.yes", option: "Yes", onValue: "Yes" }],
+    ),
+    true,
+  );
+  assert.equal(
+    pdfBindingsMatch(
+      [{ option: "Yes", onValue: "Yes", fieldName: "check.yes" }],
+      [{ fieldName: "check.no", option: "Yes", onValue: "Yes" }],
+    ),
+    false,
+  );
+});
 
 test("required answers and select options are validated", () => {
   const fields: KioskTemplateField[] = [
